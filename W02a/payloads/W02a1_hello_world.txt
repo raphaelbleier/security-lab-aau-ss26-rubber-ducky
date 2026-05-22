@@ -1,0 +1,23 @@
+REM ============================================================
+REM  W02a.1 – Rubber Ducky: Hello World
+REM  Autoren: Raphael Bleier, Joachim Lugger
+REM  Ziel-OS: Windows
+REM  Beschreibung: Öffnet Notepad und gibt "Hello World" aus
+REM ============================================================
+
+REM Warten bis das System bereit ist (2 Sekunden)
+DELAY 2000
+
+REM Windows-Taste drücken um Run-Dialog zu öffnen
+GUI r
+DELAY 500
+
+REM "notepad" eintippen und bestätigen
+STRINGLN notepad
+DELAY 1000
+
+REM Text in den Editor eingeben
+STRING Hello World
+
+REM Hinweis: Alternativ via CLI mit echo-Befehl:
+REM STRINGLN cmd /k echo Hello World

