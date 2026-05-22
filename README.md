@@ -11,7 +11,8 @@
 Losungen fur **Aufgabenblatt W02a – Rubber Ducky** aus dem System Security Lab (SS2026) an der AAU Klagenfurt.
 
 Exfiltration erfolgt vollstandig uber einen **Telegram Bot** – kein lokaler Server notwendig.
-PowerShell-Payloads werden **fileless direkt von GitHub** nachgeladen (kein Byte auf der Festplatte des Opfers).
+PowerShell-Payloads werden per **BITS** von GitHub geladen (Temp-Datei, wird nach Ausfuhrung geloscht).
+Alle Payloads enthalten **AMSI-Bypass + Byte-Array-String-Obfuskierung** gegen Windows Defender.
 
 | Aufgabe | Beschreibung | Dateien |
 |---|---|---|
@@ -21,6 +22,7 @@ PowerShell-Payloads werden **fileless direkt von GitHub** nachgeladen (kein Byte
 | W02a.4 | Externes Script laden & ausfuhren | `W02a/payloads/W02a4_script_loader.txt` |
 | W02a.5 | Reverse Shell | `W02a/payloads/W02a5_reverse_shell_trigger.txt`, `W02a/scripts/reverse_shell.ps1` |
 | W02a.6 | Eigener Angriff – WLAN-Exfiltration | `W02a/payloads/W02a6_custom_attack.txt`, `W02a/scripts/custom_attack.ps1` |
+| W02a.6 | Browser Credential Stealer | `W02a/payloads/W02a6_credential_steal_trigger.txt`, `W02a/scripts/credential_stealer.ps1` |
 | W02a.6+ | DevRecon – Developer Credential Harvester | `W02a/payloads/W02a6_devrecon_trigger.txt`, `W02a/scripts/developer_recon.ps1` |
 | W02a.7 | Absicherungsideen (Theorie) | `W02a/README.md` |
 
@@ -41,12 +43,14 @@ Vollstandige Dokumentation, Theorieantworten und Setup-Anleitung: [`W02a/README.
     │   ├── W02a4_script_loader.txt
     │   ├── W02a5_reverse_shell_trigger.txt
     │   ├── W02a6_custom_attack.txt
+    │   ├── W02a6_credential_steal_trigger.txt
     │   └── W02a6_devrecon_trigger.txt
-    └── scripts/                       # PowerShell Payloads (GitHub-gehostet, fileless)
-        ├── info_gather.ps1
-        ├── reverse_shell.ps1
-        ├── custom_attack.ps1
-        └── developer_recon.ps1
+    └── scripts/                       # PowerShell Payloads (BITS von GitHub geladen)
+        ├── info_gather.ps1            # System-Info Exfiltration
+        ├── reverse_shell.ps1          # TCP Reverse Shell
+        ├── custom_attack.ps1          # WLAN-Passwort-Exfiltration
+        ├── credential_stealer.ps1     # Windows CredMan + Chromium-Credentials
+        └── developer_recon.ps1        # SSH Keys, Git-Tokens, Persistenz
 ```
 
 ---

